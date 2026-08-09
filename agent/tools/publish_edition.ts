@@ -14,7 +14,7 @@ const outputSchema = z.object({
 
 export default defineTool({
   description:
-    "Publish one complete, source-grounded Juara Merdeka edition to the Cloudflare newspaper. The operation is idempotent by edition date.",
+    "Publish one complete, source-grounded Juara Merdeka edition in Indonesian and Simplified Chinese to the Cloudflare newspaper. Both language versions are required, share the same eight source articles, and are committed atomically. The operation is idempotent by edition date.",
   inputSchema: editionInputSchema,
   outputSchema,
   async execute(edition, context) {
@@ -58,7 +58,7 @@ export default defineTool({
   toModelOutput(output) {
     return {
       type: "text",
-      value: `Edisi ${output.editionId} terbit dengan ${output.articleCount} berita. Tanda terima: ${output.receipt}.`,
+      value: `Edisi dwibahasa ${output.editionId} terbit dengan ${output.articleCount} berita dalam bahasa Indonesia dan Tionghoa. Tanda terima: ${output.receipt}.`,
     };
   },
 });

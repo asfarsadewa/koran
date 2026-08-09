@@ -156,6 +156,52 @@ main,
   line-height: 1;
 }
 
+.masthead__tools {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+}
+
+.language-switch {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-height: 25px;
+  margin: -3px -1px -3px 0;
+  padding: 4px 7px 3px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 2px 2px 0 var(--ink);
+  font: 820 10px/1 "Roboto Condensed JM", "Arial Narrow", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.language-switch:hover:not(:disabled),
+.language-switch[aria-pressed="true"] {
+  color: var(--paper-bright);
+  background: var(--ink);
+}
+
+.language-switch:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.language-switch:disabled {
+  opacity: 0.48;
+  box-shadow: 1px 1px 0 var(--ink);
+  cursor: not-allowed;
+}
+
+.language-switch__rule {
+  font-size: 14px;
+  line-height: 0.5;
+}
+
 .masthead__body {
   display: grid;
   grid-template-columns: minmax(130px, 0.7fr) minmax(520px, 4fr) minmax(150px, 0.8fr);
@@ -597,6 +643,7 @@ main,
   font-weight: 400;
   line-height: 0.76;
   letter-spacing: -0.04em;
+  white-space: pre-line;
 }
 
 .story-grid {
@@ -712,6 +759,100 @@ main,
   letter-spacing: -0.12em;
 }
 
+.newsprint.is-language-shifting [data-copy-id] {
+  text-shadow:
+    -1.2px 0 rgba(0, 0, 0, 0.44),
+    1.6px 0 rgba(0, 0, 0, 0.2);
+}
+
+.newsprint.is-language-shifting::before {
+  opacity: 0.4;
+  animation: ink-register-shift 170ms steps(2, end) infinite;
+}
+
+@keyframes ink-register-shift {
+  50% {
+    transform: translateX(1px);
+  }
+}
+
+html[lang="zh-Hans"] {
+  font-synthesis: weight;
+}
+
+html[lang="zh-Hans"] body {
+  font-family: "Songti SC", STSong, SimSun, "Noto Serif CJK SC", serif;
+}
+
+html[lang="zh-Hans"] .masthead__topline,
+html[lang="zh-Hans"] .masthead__dateline,
+html[lang="zh-Hans"] .section-strip,
+html[lang="zh-Hans"] .utility-label,
+html[lang="zh-Hans"] .story-source,
+html[lang="zh-Hans"] .story-section,
+html[lang="zh-Hans"] .world-wire__header p,
+html[lang="zh-Hans"] .colophon strong,
+html[lang="zh-Hans"] .loading-ledger p,
+html[lang="zh-Hans"] .demo-notice,
+html[lang="zh-Hans"] .language-switch {
+  font-family: "Heiti SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: none;
+}
+
+html[lang="zh-Hans"] .masthead__name {
+  font-family: STKaiti, KaiTi, "Kaiti SC", "DFKai-SB", serif;
+  font-size: clamp(62px, 8vw, 126px);
+  font-weight: 900;
+  line-height: 0.86;
+  letter-spacing: 0.055em;
+  transform: none;
+}
+
+html[lang="zh-Hans"] .masthead__motto {
+  font-style: normal;
+  letter-spacing: 0.18em;
+}
+
+html[lang="zh-Hans"] .lead-headline {
+  max-width: 12ch;
+  font-size: clamp(52px, 6.25vw, 96px);
+  line-height: 1.02;
+  letter-spacing: 0.015em;
+}
+
+html[lang="zh-Hans"] .lead-headline--long {
+  max-width: 16ch;
+  font-size: clamp(47px, 5.7vw, 86px);
+  line-height: 1.04;
+}
+
+html[lang="zh-Hans"] .lead-dek {
+  font-size: clamp(19px, 1.65vw, 25px);
+  line-height: 1.55;
+}
+
+html[lang="zh-Hans"] .lead-dek::first-letter {
+  float: none;
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+html[lang="zh-Hans"] .wire-story h3,
+html[lang="zh-Hans"] .story-card h2 {
+  line-height: 1.12;
+  letter-spacing: 0.025em;
+}
+
+html[lang="zh-Hans"] .wire-story p,
+html[lang="zh-Hans"] .story-card__dek,
+html[lang="zh-Hans"] .impact-note,
+html[lang="zh-Hans"] .colophon p {
+  line-height: 1.6;
+}
+
 [hidden] {
   display: none !important;
 }
@@ -767,13 +908,24 @@ main,
   }
 
   .masthead__topline {
-    justify-content: center;
+    justify-content: space-between;
+    align-items: center;
     font-size: 10px;
   }
 
-  .masthead__topline span:nth-child(2),
-  .masthead__topline span:nth-child(3) {
+  .masthead__topline > span:nth-child(2),
+  .masthead__tools > span {
     display: none;
+  }
+
+  .masthead__tools {
+    gap: 0;
+  }
+
+  .language-switch {
+    min-height: 24px;
+    margin-right: 0;
+    font-size: 9px;
   }
 
   .masthead__body {
@@ -791,6 +943,12 @@ main,
     line-height: 0.8;
     letter-spacing: -0.077em;
     white-space: normal;
+  }
+
+  html[lang="zh-Hans"] .masthead__name {
+    font-size: clamp(48px, 14.5vw, 76px);
+    line-height: 0.95;
+    white-space: nowrap;
   }
 
   .masthead__motto {
@@ -866,6 +1024,13 @@ main,
     line-height: 0.87;
   }
 
+  html[lang="zh-Hans"] .lead-headline,
+  html[lang="zh-Hans"] .lead-headline--long {
+    max-width: none;
+    font-size: clamp(40px, 11.5vw, 58px);
+    line-height: 1.08;
+  }
+
   .lead-dek {
     font-size: 20px;
   }
@@ -935,6 +1100,10 @@ main,
   .loading-ledger__bar {
     animation: none;
   }
+
+  .newsprint.is-language-shifting::before {
+    animation: none;
+  }
 }
 
 @media print {
@@ -951,6 +1120,10 @@ main,
 
   .newsprint::before,
   .newsprint::after {
+    display: none;
+  }
+
+  .language-switch {
     display: none;
   }
 }
