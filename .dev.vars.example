@@ -1,0 +1,8 @@
+# Cloudflare's documented always-pass test widget. Never use these in production.
+ENVIRONMENT="development"
+TURNSTILE_SITE_KEY="1x00000000000000000000AA"
+TURNSTILE_SECRET_KEY="1x0000000000000000000000000000000AA"
+
+# Local-only signing material. Replace both before exposing a deployment.
+SESSION_SECRET="replace-with-a-long-random-local-session-secret"
+PUBLISH_SECRET="replace-with-a-long-random-local-publish-secret"
