@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPublicationContext } from "../agent/lib/publication-context";
+import {
+  buildEditorialWindow,
+  buildPublicationContext,
+  EDITORIAL_WINDOW_HOURS,
+  EDITORIAL_WINDOW_MS,
+} from "../agent/lib/publication-context";
 
 describe("buildPublicationContext", () => {
   it("uses the Perth calendar day at the 07.00 publication boundary", () => {
@@ -28,8 +33,13 @@ describe("buildPublicationContext", () => {
     expect(context.issueNumber).toBe(1);
     expect(context.expectedArticleCount).toBe(8);
     expect(context.searchWindowEnd).toBe(now.toISOString());
+    expect(EDITORIAL_WINDOW_HOURS).toBe(36);
     expect(Date.parse(context.searchWindowEnd) - Date.parse(context.searchWindowStart)).toBe(
-      36 * 60 * 60 * 1_000,
+      EDITORIAL_WINDOW_MS,
     );
+    expect(buildEditorialWindow(now)).toEqual({
+      searchWindowStart: context.searchWindowStart,
+      searchWindowEnd: context.searchWindowEnd,
+    });
   });
 });
