@@ -2,7 +2,7 @@
   "name": "juara-merdeka",
   "version": "0.1.0",
   "private": true,
-  "description": "An Eve-curated Indonesian world-news broadsheet published on Cloudflare Workers.",
+  "description": "An Eve-curated Indonesian and Chinese world-news broadsheet published on Cloudflare Workers.",
   "type": "module",
   "engines": {
     "node": ">=24"

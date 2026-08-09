@@ -10,6 +10,7 @@
     <meta name="robots" content="index,follow,max-image-preview:large">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="id_ID">
+    <meta property="og:locale:alternate" content="zh_CN">
     <meta property="og:site_name" content="Juara Merdeka">
     <meta property="og:url" content="https://koran.r3ptil.com/">
     <meta property="og:title" content="Juara Merdeka — Harian Ikhtisar Dunia">
@@ -44,62 +45,76 @@
     <title>Juara Merdeka — Harian Ikhtisar Dunia</title>
     <link rel="canonical" href="https://koran.r3ptil.com/">
     <link rel="stylesheet" href="/styles.css">
-    <script src="/app.js" defer></script>
+    <script src="/app.js" type="module"></script>
   </head>
   <body>
-    <a class="skip-link" href="#isi-utama">Langsung ke berita utama</a>
+    <a class="skip-link" href="#isi-utama" data-copy-id="skip-link">Langsung ke berita utama</a>
 
     <div class="newsprint" id="newsprint">
       <header class="masthead" aria-labelledby="nama-koran">
         <div class="masthead__topline">
-          <span>HARIAN IKHTISAR DUNIA</span>
-          <span>SEMARANG • JAWA TENGAH</span>
-          <span>TERBIT PUKUL 07.00 WITA</span>
+          <span data-copy-id="top-purpose">HARIAN IKHTISAR DUNIA</span>
+          <span data-copy-id="top-place">SEMARANG • JAWA TENGAH</span>
+          <div class="masthead__tools">
+            <span data-copy-id="top-schedule">TERBIT PUKUL 07.00 WITA</span>
+            <button
+              class="language-switch"
+              id="language-switch"
+              type="button"
+              aria-pressed="false"
+              aria-label="Versi Tionghoa belum tersedia untuk edisi ini"
+              disabled
+            >
+              <span id="language-current">INDONESIA</span>
+              <span class="language-switch__rule" aria-hidden="true">→</span>
+              <span id="language-target">中文版待刊</span>
+            </button>
+          </div>
         </div>
 
         <div class="masthead__body">
           <div class="masthead__issue">
-            <span class="utility-label">NOMOR</span>
+            <span class="utility-label" data-copy-id="number-label">NOMOR</span>
             <strong id="issue-number">—</strong>
-            <span id="edition-date-short">MENUNGGU EDISI</span>
+            <span id="edition-date-short" data-copy-id="edition-date-short">MENUNGGU EDISI</span>
           </div>
 
           <div class="masthead__name-wrap">
-            <h1 class="masthead__name" id="nama-koran">JUARA MERDEKA</h1>
-            <p class="masthead__motto">Bebas memandang dunia, teguh mengingat manusia</p>
+            <h1 class="masthead__name" id="nama-koran" data-copy-id="masthead-name">JUARA MERDEKA</h1>
+            <p class="masthead__motto" data-copy-id="masthead-motto">Bebas memandang dunia, teguh mengingat manusia</p>
           </div>
 
           <div class="masthead__price">
-            <span class="utility-label">HARGA</span>
-            <strong>KESADARAN</strong>
-            <span>TIDAK DIPERJUALBELIKAN</span>
+            <span class="utility-label" data-copy-id="price-label">HARGA</span>
+            <strong data-copy-id="price-value">KESADARAN</strong>
+            <span data-copy-id="price-note">TIDAK DIPERJUALBELIKAN</span>
           </div>
         </div>
 
         <div class="masthead__dateline">
-          <time id="edition-date" datetime="">Edisi sedang dihimpun</time>
-          <span id="curator-line">DIHIMPUN MESIN REDAKSI</span>
-          <span>SUMBER ASLI TERPAUT PADA SETIAP BERITA</span>
+          <time id="edition-date" datetime="" data-copy-id="edition-date">Edisi sedang dihimpun</time>
+          <span id="curator-line" data-copy-id="curator-line">DIHIMPUN MESIN REDAKSI</span>
+          <span data-copy-id="source-note">SUMBER ASLI TERPAUT PADA SETIAP BERITA</span>
         </div>
 
         <nav class="section-strip" aria-label="Bidang pemberitaan">
-          <span>PERTIKAIAN</span>
-          <span>BENCANA</span>
-          <span>KEMANUSIAAN</span>
-          <span>HAK ASASI</span>
-          <span>KESEHATAN</span>
-          <span>IKLIM</span>
+          <span data-copy-id="strip-conflict">PERTIKAIAN</span>
+          <span data-copy-id="strip-disaster">BENCANA</span>
+          <span data-copy-id="strip-humanitarian">KEMANUSIAAN</span>
+          <span data-copy-id="strip-rights">HAK ASASI</span>
+          <span data-copy-id="strip-health">KESEHATAN</span>
+          <span data-copy-id="strip-climate">IKLIM</span>
         </nav>
       </header>
 
-      <div class="demo-notice" id="demo-notice" hidden>
+      <div class="demo-notice" id="demo-notice" data-copy-id="demo-notice" hidden>
         EDISI PERAGA — NASKAH DI BAWAH INI HANYA DIPAKAI UNTUK MEMERIKSA TATA LETAK
       </div>
 
       <main id="isi-utama" tabindex="-1">
         <div class="edition-intro">
-          <p class="edition-intro__label">POKOK BERITA HARI INI</p>
-          <p class="edition-intro__dek" id="masthead-dek">
+          <p class="edition-intro__label" data-copy-id="intro-label">POKOK BERITA HARI INI</p>
+          <p class="edition-intro__dek" id="masthead-dek" data-copy-id="masthead-dek">
             Mesin redaksi sedang menyusun ikhtisar pagi.
           </p>
         </div>
@@ -107,7 +122,7 @@
         <div class="loading-ledger" id="loading-ledger" role="status" aria-live="polite">
           <div class="loading-ledger__bar"></div>
           <div class="loading-ledger__columns"></div>
-          <p>LEMBAR BERITA SEDANG DIBUKA…</p>
+          <p data-copy-id="loading-copy">LEMBAR BERITA SEDANG DIBUKA…</p>
         </div>
 
         <section class="front-grid" id="front-grid" aria-label="Berita utama" hidden>
@@ -116,14 +131,14 @@
           <aside class="world-wire" aria-labelledby="world-wire-title">
             <header class="world-wire__header">
               <span class="world-wire__telegraph">••• — •—• •—</span>
-              <h2 id="world-wire-title">KAWAT DUNIA</h2>
-              <p>Laporan singkat dari berbagai tempat</p>
+              <h2 id="world-wire-title" data-copy-id="wire-title">KAWAT DUNIA</h2>
+              <p data-copy-id="wire-subtitle">Laporan singkat dari berbagai tempat</p>
             </header>
             <div class="world-wire__items" id="world-wire-items"></div>
             <div class="editorial-stamp" aria-label="Dihimpun mesin redaksi pukul tujuh WITA">
-              <span>DIHIMPUN</span>
-              <strong>MESIN<br>REDAKSI</strong>
-              <span>07.00 WITA</span>
+              <span data-copy-id="stamp-top">DIHIMPUN</span>
+              <strong data-copy-id="stamp-middle">MESIN&#10;REDAKSI</strong>
+              <span data-copy-id="stamp-time">07.00 WITA</span>
             </div>
           </aside>
         </section>
@@ -131,9 +146,9 @@
         <section class="story-grid" id="story-grid" aria-label="Berita lainnya" hidden></section>
 
         <section class="empty-edition" id="empty-edition" hidden>
-          <p class="utility-label">KETERANGAN REDAKSI</p>
-          <h2>Edisi pertama masih dihimpun.</h2>
-          <p>
+          <p class="utility-label" data-copy-id="empty-label">KETERANGAN REDAKSI</p>
+          <h2 data-copy-id="empty-title">Edisi pertama masih dihimpun.</h2>
+          <p data-copy-id="empty-copy">
             Mesin redaksi belum menyerahkan susunan berita pagi. Silakan datang kembali setelah
             pukul 07.00 WITA.
           </p>
@@ -142,20 +157,20 @@
 
       <footer class="colophon">
         <div>
-          <strong>TENTANG LEMBAR INI</strong>
-          <p>
+          <strong data-copy-id="about-title">TENTANG LEMBAR INI</strong>
+          <p data-copy-id="about-copy">
             Juara Merdeka memilih kabar berdasarkan dampak kemanusiaan, bukan kegaduhan. Ringkasan
             tidak menggantikan laporan asli; buka setiap berita untuk membaca sumber penerbitnya.
           </p>
         </div>
         <div>
-          <strong>PERTANGGUNGJAWABAN</strong>
-          <p>
+          <strong data-copy-id="accountability-title">PERTANGGUNGJAWABAN</strong>
+          <p data-copy-id="accountability-copy">
             Pemilihan dan penyusunan bahasa dilakukan oleh GPT-5.6 Sol. Tautan sumber, tanggal,
             dan akibat peristiwa diperiksa dalam tata kerja redaksi sebelum penerbitan.
           </p>
         </div>
-        <div class="colophon__mark" aria-hidden="true">JM</div>
+        <div class="colophon__mark" aria-hidden="true" data-copy-id="colophon-mark">JM</div>
       </footer>
     </div>
   </body>

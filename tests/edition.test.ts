@@ -4,8 +4,7 @@ import { editionInputSchema, editionPublishSchema, isLikelyDirectArticleUrl } fr
 import { validEditionPublish } from "./fixtures";
 
 function validEdition() {
-  const { editionDate, issueNumber, mastheadDek, articles } = validEditionPublish();
-  return { editionDate, issueNumber, mastheadDek, articles };
+  return editionInputSchema.parse(validEditionPublish());
 }
 
 describe("editionInputSchema", () => {
@@ -37,6 +36,19 @@ describe("editionInputSchema", () => {
     if (!last) return;
     last.rank = 7;
     expect(editionInputSchema.safeParse(edition).success).toBe(false);
+  });
+
+  it("requires eight rank-matched Chinese articles containing Han characters", () => {
+    const missingTranslation = validEdition();
+    missingTranslation.translations.zhHans.articles.pop();
+    expect(editionInputSchema.safeParse(missingTranslation).success).toBe(false);
+
+    const copiedLatin = validEdition();
+    const first = copiedLatin.translations.zhHans.articles[0];
+    expect(first).toBeDefined();
+    if (!first) return;
+    first.headline = "Laporan berbahasa Indonesia tidak boleh mengisi edisi Tionghoa";
+    expect(editionInputSchema.safeParse(copiedLatin).success).toBe(false);
   });
 
   it("rejects a section index in place of a direct source article", () => {

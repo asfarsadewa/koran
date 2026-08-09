@@ -27,6 +27,7 @@ describe("social-sharing contract", () => {
     expect(html).toContain('<meta property="og:image:height" content="630">');
     expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
     expect(html).toContain('<meta property="og:locale" content="id_ID">');
+    expect(html).toContain('<meta property="og:locale:alternate" content="zh_CN">');
   });
 
   it("places the same metadata on the pre-access Turnstile document", async () => {
@@ -39,6 +40,7 @@ describe("social-sharing contract", () => {
     expect(html).toContain(`content="${SOCIAL_DESCRIPTION}"`);
     expect(html).toContain(`content="${SOCIAL_IMAGE_URL}"`);
     expect(html).toContain(`content="${SOCIAL_IMAGE_ALT}"`);
+    expect(html).toContain('<meta property="og:locale:alternate" content="zh_CN">');
   });
 
   it("ships a valid 1200 by 630 PNG banner", async () => {

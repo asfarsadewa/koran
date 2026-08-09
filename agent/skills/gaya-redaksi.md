@@ -1,5 +1,5 @@
 ---
-description: Pedoman bahasa dan tata judul resmi surat kabar Indonesia penghujung 1970-an hingga 1980-an untuk setiap edisi Juara Merdeka.
+description: Pedoman bahasa dan tata judul resmi surat kabar Indonesia serta Tionghoa penghujung 1970-an hingga 1980-an untuk setiap edisi Juara Merdeka.
 ---
 
 # Gaya redaksi Juara Merdeka
@@ -27,3 +27,11 @@ Kalimat `impact` bukan pengulangan tajuk. Terangkan apa yang terganggu—pangan,
 ## Sikap
 
 Nada harus prihatin tanpa meratap, tegas tanpa berteriak, dan formal tanpa menjadi kabur. Korban tetap manusia, bukan angka penghias halaman.
+
+## Edisi bahasa Tionghoa
+
+- Gunakan aksara Tionghoa Sederhana dan ragam tulis resmi. Bayangkan naskah disunting meja berita luar negeri pada dasawarsa 1980-an: padat, tertib, dan tidak memakai ungkapan internet masa kini.
+- Tajuk mendahulukan peristiwa serta akibat yang telah dibuktikan. Titik koma berbentuk `；` boleh dipakai untuk menghubungkan kejadian dengan akibat.
+- Pakai kalimat berita yang wajar, bukan terjemahan kata demi kata dari susunan bahasa Indonesia. Kendati demikian, angka, tempat, waktu, pihak, tingkat kepastian, dan akibat wajib tetap sama.
+- Gunakan bentuk seperti “据报道”, “有关当局表示”, “截至发稿时”, dan “有关机构仍在核实” secara hemat apabila sesuai dengan sumber.
+- Jangan menerjemahkan atau mengarang nama penerbit sumber di dalam data terjemahan. Nama penerbit dan tautannya tetap satu untuk kedua versi.

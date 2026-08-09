@@ -1,6 +1,14 @@
 import type { EditionPublishInput } from "../shared/edition";
 
 export function validEditionPublish(): EditionPublishInput {
+  const chineseArticles = Array.from({ length: 8 }, (_, index) => ({
+    rank: index + 1,
+    headline: `第${index + 1}号重大灾情报告亟须国际社会持续关注`,
+    dek: "经核实的消息表明，此次事态已严重扰乱居民生活及基本公共服务。有关当局仍在汇集较为完整的情况。",
+    dateline: "日内瓦",
+    impact: "受影响家庭取得粮食、清洁饮水、住所以及基本医疗照护的渠道均已缩减。",
+  }));
+
   return {
     editionDate: "2026-08-09",
     issueNumber: 1,
@@ -21,5 +29,12 @@ export function validEditionPublish(): EditionPublishInput {
         "Gangguan tersebut mengurangi akses keluarga terhadap pangan, air bersih, tempat tinggal, serta perawatan kesehatan dasar.",
       ...(index === 0 ? { imageUrl: "https://images.example.com/world/crisis-photo.jpg" } : {}),
     })),
+    translations: {
+      zhHans: {
+        mastheadDek:
+          "多项国际危机继续压迫平民生活，并阻碍刻不容缓的人道救援送抵受灾地区。",
+        articles: chineseArticles,
+      },
+    },
   };
 }
