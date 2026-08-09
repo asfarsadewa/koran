@@ -14,7 +14,7 @@ Apabila alamat produksi dibagikan melalui wahana pergaulan, kepala koran, uraian
 
 Eve dan Cloudflare mengerjakan bagian yang berbeda:
 
-1. **Agen redaksi Eve (Node.js 24 pada Vercel)** menelusuri indeks Brave News selama 36 jam terakhir dengan hasil yang ringkas, memeriksa silang sumber, lalu menyusun tepat delapan berita memakai OpenAI Responses API dan model `gpt-5.6-sol`. Naskah akhir ditandatangani dengan HMAC-SHA256.
+1. **Agen redaksi Eve (Node.js 24 pada Vercel)** meminta calon berita dari rentang kalender Brave News yang meliputi jendela redaksi, kemudian menyaring waktu terbitnya sendiri hingga tepat 36 jam. Hasil tanpa waktu terbit yang dapat dipastikan serta hasil di luar jendela ditolak. Agen lalu memeriksa silang sumber dan menyusun tepat delapan berita memakai OpenAI Responses API dan model `gpt-5.6-sol`. Naskah akhir ditandatangani dengan HMAC-SHA256.
 2. **Cloudflare Worker** menerima naskah yang sah melalui `POST /api/editions`, memvalidasi susunan dengan Zod, dan menyimpan edisi secara idempoten berdasarkan tanggal.
 3. **Cloudflare D1** menyimpan edisi dan berita. Tidak ada basis data berbayar atau penyimpanan gambar milik sendiri.
 4. **Turnstile** memeriksa pembaca. Setelah Siteverify berhasil, Worker menerbitkan cookie akses `HttpOnly`, `Secure`, dan bertanda tangan selama 12 jam.

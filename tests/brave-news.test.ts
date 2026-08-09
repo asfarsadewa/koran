@@ -40,6 +40,26 @@ function braveResponse(overrides: Record<string, unknown> = {}): Response {
   );
 }
 
+function candidate(
+  slug: string,
+  pageAge: string | null,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    title: `Verified report ${slug} with sufficient detail`,
+    url: `https://news.example/world/verified-report-${slug}`,
+    description: `Relief agencies report serious consequences in the verified ${slug} dispatch.`,
+    page_age: pageAge,
+    profile: { long_name: "Example News" },
+    ...overrides,
+  };
+}
+
+const editorialWindow = {
+  searchWindowStart: "2026-08-07T12:00:00.000Z",
+  searchWindowEnd: "2026-08-09T00:00:00.000Z",
+};
+
 describe("searchBraveNews", () => {
   it("returns bounded, normalized HTTPS news snippets", async () => {
     const fetchMock = vi.fn().mockResolvedValue(braveResponse());
@@ -117,14 +137,14 @@ describe("searchBraveNews", () => {
 });
 
 describe("collectDailyCandidates", () => {
-  it("runs the seven fixed news searches and deduplicates a repeated article URL", async () => {
+  it("runs seven calendar-range searches and deduplicates inside the exact window", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-09T00:00:00.000Z"));
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(braveResponse()));
     vi.stubGlobal("fetch", fetchMock);
     const { collectDailyCandidates } = await loadBraveNews();
 
-    const resultPromise = collectDailyCandidates("test-api-key");
+    const resultPromise = collectDailyCandidates("test-api-key", editorialWindow);
     await vi.runAllTimersAsync();
     const result = await resultPromise;
 
@@ -132,5 +152,61 @@ describe("collectDailyCandidates", () => {
     expect(fetchMock).toHaveBeenCalledTimes(7);
     expect(result.results).toHaveLength(1);
     expect(result.results[0]?.searchQuery).toContain("civilian casualties");
+    expect(result).toMatchObject({
+      ...editorialWindow,
+      freshnessRange: "2026-08-07to2026-08-09",
+      excludedOutsideWindow: 0,
+      excludedWithoutTimestamp: 0,
+    });
+    for (const [requestUrl] of fetchMock.mock.calls as [URL, RequestInit][]) {
+      expect(requestUrl.searchParams.get("freshness")).toBe("2026-08-07to2026-08-09");
+      expect(requestUrl.searchParams.get("count")).toBe("30");
+    }
+  });
+
+  it("keeps both 36-hour boundaries and rejects older, future, and undated candidates", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(editorialWindow.searchWindowEnd));
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        braveResponse({
+          results: [
+            candidate("at-window-start", editorialWindow.searchWindowStart),
+            candidate("at-window-end", editorialWindow.searchWindowEnd),
+            candidate("one-millisecond-too-old", "2026-08-07T11:59:59.999Z"),
+            candidate("one-millisecond-too-new", "2026-08-09T00:00:00.001Z"),
+            candidate("missing-timestamp", null),
+            candidate("invalid-timestamp", "waktu tidak diketahui"),
+          ],
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { collectDailyCandidates } = await loadBraveNews();
+
+    const resultPromise = collectDailyCandidates("test-api-key", editorialWindow);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(result.results.map((result) => result.url)).toEqual([
+      "https://news.example/world/verified-report-at-window-start",
+      "https://news.example/world/verified-report-at-window-end",
+    ]);
+    expect(result.excludedOutsideWindow).toBe(2);
+    expect(result.excludedWithoutTimestamp).toBe(2);
+  });
+
+  it("rejects anything other than an exact 36-hour window before calling Brave", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { collectDailyCandidates } = await loadBraveNews();
+
+    await expect(
+      collectDailyCandidates("test-api-key", {
+        searchWindowStart: "2026-08-08T00:00:00.000Z",
+        searchWindowEnd: "2026-08-09T00:00:00.000Z",
+      }),
+    ).rejects.toThrow("exactly 36 hours");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -1,11 +1,41 @@
 import { z } from "zod";
 
 import { isLikelyDirectArticleUrl } from "../../shared/edition";
+import {
+  EDITORIAL_WINDOW_MS,
+  type EditorialWindow,
+} from "./publication-context";
+
+const customFreshnessSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}to\d{4}-\d{2}-\d{2}$/u);
+
+const parseableTimestampSchema = z.string().refine(
+  (value) => Number.isFinite(Date.parse(value)),
+  "Editorial window timestamps must be parseable ISO dates",
+);
+
+export const editorialWindowSchema = z
+  .object({
+    searchWindowStart: parseableTimestampSchema,
+    searchWindowEnd: parseableTimestampSchema,
+  })
+  .superRefine((window, context) => {
+    const start = Date.parse(window.searchWindowStart);
+    const end = Date.parse(window.searchWindowEnd);
+    if (end - start !== EDITORIAL_WINDOW_MS) {
+      context.addIssue({
+        code: "custom",
+        path: ["searchWindowEnd"],
+        message: "Editorial window must span exactly 36 hours",
+      });
+    }
+  });
 
 export const braveNewsInputSchema = z.object({
   query: z.string().trim().min(3).max(300),
-  freshness: z.enum(["pd", "pw"]).default("pd"),
-  count: z.number().int().min(3).max(15).default(10),
+  freshness: z.union([z.enum(["pd", "pw"]), customFreshnessSchema]).default("pd"),
+  count: z.number().int().min(3).max(30).default(10),
   offset: z.number().int().min(0).max(2).default(0),
 });
 
@@ -27,6 +57,11 @@ export const braveNewsResultSchema = z.object({
 
 export const dailyCandidateResultSchema = z.object({
   searchesRun: z.number().int(),
+  searchWindowStart: parseableTimestampSchema,
+  searchWindowEnd: parseableTimestampSchema,
+  freshnessRange: customFreshnessSchema,
+  excludedOutsideWindow: z.number().int().nonnegative(),
+  excludedWithoutTimestamp: z.number().int().nonnegative(),
   results: z.array(
     braveNewsResultSchema.shape.results.element.extend({
       searchQuery: z.string(),
@@ -93,6 +128,10 @@ function queued<T>(operation: () => Promise<T>): Promise<T> {
     () => undefined,
   );
   return result;
+}
+
+function freshnessRangeForWindow(window: EditorialWindow): string {
+  return `${window.searchWindowStart.slice(0, 10)}to${window.searchWindowEnd.slice(0, 10)}`;
 }
 
 export async function searchBraveNews(
@@ -188,13 +227,18 @@ export async function searchBraveNews(
 
 export async function collectDailyCandidates(
   apiKey: string,
+  rawWindow: EditorialWindow,
   signal?: AbortSignal,
 ): Promise<DailyCandidateResult> {
+  const window = editorialWindowSchema.parse(rawWindow);
+  const windowStart = Date.parse(window.searchWindowStart);
+  const windowEnd = Date.parse(window.searchWindowEnd);
+  const freshnessRange = freshnessRangeForWindow(window);
   const byUrl = new Map<string, DailyCandidateResult["results"][number]>();
 
   for (const query of DAILY_SEARCH_QUERIES) {
     const search = await searchBraveNews(
-      { query, freshness: "pd", count: 15, offset: 0 },
+      { query, freshness: freshnessRange, count: 30, offset: 0 },
       apiKey,
       signal,
     );
@@ -203,8 +247,32 @@ export async function collectDailyCandidates(
     }
   }
 
+  let excludedOutsideWindow = 0;
+  let excludedWithoutTimestamp = 0;
+  const results = [...byUrl.values()].filter((result) => {
+    if (!result.publishedAt) {
+      excludedWithoutTimestamp += 1;
+      return false;
+    }
+    const publishedAt = Date.parse(result.publishedAt);
+    if (!Number.isFinite(publishedAt)) {
+      excludedWithoutTimestamp += 1;
+      return false;
+    }
+    if (publishedAt < windowStart || publishedAt > windowEnd) {
+      excludedOutsideWindow += 1;
+      return false;
+    }
+    return true;
+  });
+
   return dailyCandidateResultSchema.parse({
     searchesRun: DAILY_SEARCH_QUERIES.length,
-    results: [...byUrl.values()],
+    searchWindowStart: window.searchWindowStart,
+    searchWindowEnd: window.searchWindowEnd,
+    freshnessRange,
+    excludedOutsideWindow,
+    excludedWithoutTimestamp,
+    results,
   });
 }
