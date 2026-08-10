@@ -7,7 +7,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
-      include: ["agent/lib/**/*.ts", "shared/**/*.ts", "src/**/*.ts"],
+      include: ["agent/lib/**/*.ts", "shared/**/*.ts", "src/**/*.ts", "public/language.js"],
       exclude: ["worker-configuration.d.ts"],
       thresholds: {
         statements: 90,

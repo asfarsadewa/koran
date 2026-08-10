@@ -68,6 +68,7 @@ describe("readLatestEdition", () => {
         published_at: "2026-08-09T01:00:00.000Z",
         curator_model: "gpt-5.6-sol",
         is_demo: 1,
+        masthead_dek_zh: null,
       },
       articles: [
         {
@@ -114,6 +115,52 @@ describe("readLatestEdition", () => {
       imageUrl: "https://images.example.com/world/photo.jpg",
     });
     expect(edition?.articles[1]).not.toHaveProperty("imageUrl");
+    expect(edition).not.toHaveProperty("translations");
+    expect(fake.calls[0]?.sql).toContain("LEFT JOIN edition_translations");
+    expect(fake.calls[1]?.sql).toContain("LEFT JOIN article_translations");
+  });
+
+  it("returns a Chinese edition only when all eight translated articles are complete", async () => {
+    const fake = fakeDatabase({
+      edition: {
+        id: "2026-08-10",
+        edition_date: "2026-08-10",
+        issue_number: 2,
+        masthead_dek: "Ikhtisar dunia pada hari ini.",
+        published_at: "2026-08-10T01:00:00.000Z",
+        curator_model: "gpt-5.6-sol",
+        is_demo: 0,
+        masthead_dek_zh: "今日世界灾情摘要说明各地平民所承受的严重后果。",
+      },
+      articles: Array.from({ length: 8 }, (_, index) => ({
+        id: `2026-08-10-${index + 1}`,
+        rank: index + 1,
+        section: "humanitarian",
+        headline: `Judul laporan kemanusiaan nomor ${index + 1}`,
+        dek: "Keterangan panjang mengenai keadaan kemanusiaan.",
+        dateline: "JENEWA",
+        source_name: "Penerbit Contoh",
+        source_url: `https://example.com/world/report-on-humanitarian-access-${index + 1}`,
+        source_published_at: "2026-08-10T00:00:00Z",
+        impact: "Dampak panjang terhadap warga sipil dan layanan pokok.",
+        image_url: null,
+        headline_zh: `第${index + 1}号人道危机报告受到关注`,
+        dek_zh: "经核实的消息表明当地居民生活及基本公共服务遭受严重扰乱。",
+        dateline_zh: "日内瓦",
+        impact_zh: "受影响家庭取得粮食、清洁饮水以及医疗照护的渠道已经缩减。",
+      })),
+    });
+
+    const edition = await readLatestEdition(fake.database);
+
+    expect(edition?.translations?.zhHans.articles).toHaveLength(8);
+    expect(edition?.translations?.zhHans.mastheadDek).toBe(
+      "今日世界灾情摘要说明各地平民所承受的严重后果。",
+    );
+    expect(edition?.translations?.zhHans.articles[0]).toMatchObject({
+      rank: 1,
+      dateline: "日内瓦",
+    });
   });
 });
 
@@ -130,7 +177,7 @@ describe("publishEdition", () => {
       articleCount: 8,
     });
 
-    expect(fake.getBatched()).toHaveLength(10);
+    expect(fake.getBatched()).toHaveLength(19);
     expect(fake.calls[0]?.sql).toContain("ON CONFLICT(id) DO UPDATE");
     expect(fake.calls[0]?.args).toEqual([
       "2026-08-09",
@@ -144,10 +191,26 @@ describe("publishEdition", () => {
       sql: "DELETE FROM articles WHERE edition_id = ?",
       args: ["2026-08-09"],
     });
-    expect(fake.calls.slice(2).map((call) => call.args[0])).toEqual(
+    expect(fake.calls[2]?.sql).toContain("INSERT INTO edition_translations");
+    expect(fake.calls[2]?.args).toEqual([
+      "2026-08-09",
+      edition.translations.zhHans.mastheadDek,
+    ]);
+    const articleCalls = fake.calls.filter((call) => call.sql.includes("INSERT INTO articles"));
+    const translationCalls = fake.calls.filter((call) =>
+      call.sql.includes("INSERT INTO article_translations"),
+    );
+    expect(articleCalls.map((call) => call.args[0])).toEqual(
       Array.from({ length: 8 }, (_, index) => `2026-08-09-${index + 1}`),
     );
-    expect(fake.calls[2]?.args.at(-1)).toBe("https://images.example.com/world/crisis-photo.jpg");
-    expect(fake.calls[3]?.args.at(-1)).toBeNull();
+    expect(translationCalls).toHaveLength(8);
+    expect(articleCalls[0]?.args.at(-1)).toBe("https://images.example.com/world/crisis-photo.jpg");
+    expect(articleCalls[1]?.args.at(-1)).toBeNull();
+    expect(translationCalls[0]?.args.slice(1)).toEqual([
+      edition.translations.zhHans.articles[0]?.headline,
+      edition.translations.zhHans.articles[0]?.dek,
+      edition.translations.zhHans.articles[0]?.dateline,
+      edition.translations.zhHans.articles[0]?.impact,
+    ]);
   });
 });

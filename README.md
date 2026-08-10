@@ -1,10 +1,10 @@
 # Juara Merdeka
 
-**Juara Merdeka** adalah koran ikhtisar dunia berbahasa Indonesia yang dihimpun agen redaksi setiap hari. Ia hanya memuat peristiwa yang menimbulkan dampak buruk bagi manusia—perang, pertikaian, bencana, kelaparan, wabah, pelanggaran hak asasi, dan krisis kemanusiaan—dengan tautan langsung ke penerbit sumber.
+**Juara Merdeka** adalah koran ikhtisar dunia dwibahasa Indonesia–Tionghoa yang dihimpun agen redaksi setiap hari. Ia hanya memuat peristiwa yang menimbulkan dampak buruk bagi manusia—perang, pertikaian, bencana, kelaparan, wabah, pelanggaran hak asasi, dan krisis kemanusiaan—dengan tautan langsung ke penerbit sumber.
 
 Alamat produksi: [koran.r3ptil.com](https://koran.r3ptil.com)
 
-Tampilan pembaca meniru lembar koran Indonesia era 1980-an: hitam-putih, tipografi padat, pembagian kolom keras, tekstur tinta dan kertas, tanpa rupa aplikasi web modern. Semua gambar pilihan dipaksa menjadi monokrom dengan raster halftone. Tata letak tetap terbaca di telepon genggam.
+Tampilan pembaca meniru lembar koran Indonesia era 1980-an: hitam-putih, tipografi padat, pembagian kolom keras, tekstur tinta dan kertas, tanpa rupa aplikasi web modern. Semua gambar pilihan dipaksa menjadi monokrom dengan raster halftone. Tombol `中文版` di sudut kanan atas membuka edisi Tionghoa Sederhana; pergantian dilakukan seperti penggantian acuan cetak, dengan aksara Tionghoa berangsur menggantikan huruf Latin. Tata letak dan gerak tersebut tetap terbaca di telepon genggam serta menghormati pilihan pengurangan gerak.
 
 Apabila alamat produksi dibagikan melalui wahana pergaulan, kepala koran, uraian ringkas, alamat kanonik, serta panji hitam-putih berukuran 1200 × 630 piksel disampaikan melalui Open Graph dan Twitter Card. Panji tersebut sengaja dapat dibaca tanpa cookie, sedangkan isi edisi dan aset pembaca tetap berada di belakang pemeriksaan Turnstile.
 
@@ -14,9 +14,9 @@ Apabila alamat produksi dibagikan melalui wahana pergaulan, kepala koran, uraian
 
 Eve dan Cloudflare mengerjakan bagian yang berbeda:
 
-1. **Agen redaksi Eve (Node.js 24 pada Vercel)** meminta calon berita dari rentang kalender Brave News yang meliputi jendela redaksi, kemudian menyaring waktu terbitnya sendiri hingga tepat 36 jam. Hasil tanpa waktu terbit yang dapat dipastikan serta hasil di luar jendela ditolak. Agen lalu memeriksa silang sumber dan menyusun tepat delapan berita memakai OpenAI Responses API dan model `gpt-5.6-sol`. Naskah akhir ditandatangani dengan HMAC-SHA256.
-2. **Cloudflare Worker** menerima naskah yang sah melalui `POST /api/editions`, memvalidasi susunan dengan Zod, dan menyimpan edisi secara idempoten berdasarkan tanggal.
-3. **Cloudflare D1** menyimpan edisi dan berita. Tidak ada basis data berbayar atau penyimpanan gambar milik sendiri.
+1. **Agen redaksi Eve (Node.js 24 pada Vercel)** meminta calon berita dari rentang kalender Brave News yang meliputi jendela redaksi, kemudian menyaring waktu terbitnya sendiri hingga tepat 36 jam. Hasil tanpa waktu terbit yang dapat dipastikan serta hasil di luar jendela ditolak. Agen lalu memeriksa silang sumber dan menyusun tepat delapan berita beserta naskah Tionghoa Sederhana yang sepadan memakai OpenAI Responses API dan model `gpt-5.6-sol`. Naskah akhir ditandatangani dengan HMAC-SHA256.
+2. **Cloudflare Worker** menerima naskah yang sah melalui `POST /api/editions`, memvalidasi kelengkapan kedua bahasa dengan Zod, dan menyimpan edisi secara idempoten berdasarkan tanggal.
+3. **Cloudflare D1** menyimpan satu susunan sumber bersama naskah Indonesia dan Tionghoa dalam tabel terjemahan yang terkait. Tidak ada basis data berbayar atau penyimpanan gambar milik sendiri. Edisi lama tanpa terjemahan tetap dapat dibaca, tetapi pengalih bahasa baru diaktifkan apabila delapan terjemahan tersedia seluruhnya.
 4. **Turnstile** memeriksa pembaca. Setelah Siteverify berhasil, Worker menerbitkan cookie akses `HttpOnly`, `Secure`, dan bertanda tangan selama 12 jam.
 5. **Static Assets** dari Worker menampilkan edisi terkini; setiap berita merupakan tautan ke sumber eksternal.
 
@@ -140,8 +140,10 @@ npm run worker:dry-run
 - `agent/channels/eve.ts` — kebijakan OIDC yang menutup kanal agen dari pemanggilan umum.
 - `agent/tools/publish_edition.ts` — kontrak penerbitan bertanda tangan.
 - `src/index.ts` — router Worker, Siteverify, API, dan gerbang aset.
-- `migrations/0001_initial.sql` — skema D1.
+- `migrations/0001_initial.sql` — skema dasar D1.
+- `migrations/0002_bilingual_editions.sql` — tabel naskah Tionghoa yang menjaga edisi lama tetap utuh.
 - `public/styles.css` — sistem visual koran hitam-putih responsif.
+- `public/language.js` — pemeriksaan ketersediaan bahasa, penanggalan, dan peralihan campuran aksara.
 - `public/social/juara-merdeka-social.png` — panji Open Graph hitam-putih 1200 × 630 piksel.
 
 ## Rujukan platform

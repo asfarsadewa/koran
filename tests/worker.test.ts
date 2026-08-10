@@ -256,7 +256,7 @@ describe("Worker Turnstile verification", () => {
 });
 
 describe("Worker publication boundary", () => {
-  it("accepts a fresh signed, schema-valid edition and commits ten D1 statements", async () => {
+  it("accepts a signed bilingual edition and commits both language versions atomically", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-09T02:03:04.000Z"));
     const fake = publishDatabase();
@@ -284,8 +284,35 @@ describe("Worker publication boundary", () => {
       editionId: "2026-08-09",
       articleCount: 8,
     });
-    expect(fake.getBatchSize()).toBe(10);
-    expect(fake.calls).toHaveLength(10);
+    expect(fake.getBatchSize()).toBe(19);
+    expect(fake.calls).toHaveLength(19);
+  });
+
+  it("rejects a newly published edition without the complete Chinese version", async () => {
+    const incomplete: Record<string, unknown> = { ...validEditionPublish() };
+    delete incomplete.translations;
+    const body = JSON.stringify(incomplete);
+    const timestamp = String(Date.now());
+    const signature = createHmac("sha256", "publish-secret-test")
+      .update(`${timestamp}.${body}`)
+      .digest("base64url");
+    const response = await worker.fetch(
+      new Request("https://koran.r3ptil.com/api/editions", {
+        method: "POST",
+        headers: {
+          "x-juara-timestamp": timestamp,
+          "x-juara-signature": signature,
+        },
+        body,
+      }),
+      createEnv().env,
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: "Susunan edisi tidak sah.",
+    });
   });
 
   it("rejects a bad signature and reports missing publication configuration", async () => {

@@ -31,6 +31,7 @@ export function gateResponse(siteKey: string): Response {
   <meta name="description" content="${escapeHtml(SOCIAL_DESCRIPTION)}">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="id_ID">
+  <meta property="og:locale:alternate" content="zh_CN">
   <meta property="og:site_name" content="Juara Merdeka">
   <meta property="og:url" content="${SITE_URL}">
   <meta property="og:title" content="${escapeHtml(SOCIAL_TITLE)}">
