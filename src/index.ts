@@ -1,10 +1,11 @@
 import { editionPublishSchema } from "../shared/edition";
-import { publishEdition, readLatestEdition } from "./database";
+import { publishEdition, readArticleImageUrl, readEdition } from "./database";
 import { gateResponse } from "./gate";
 import { createAccessCookie, hasValidAccessCookie, verifyPublishSignature } from "./security";
 import { SOCIAL_IMAGE_PATH } from "./social";
 
 const MAX_JSON_BYTES = 128 * 1_024;
+const MAX_ARTICLE_IMAGE_BYTES = 8 * 1_024 * 1_024;
 
 interface TurnstileResult {
   success?: boolean;
@@ -21,9 +22,12 @@ function json(payload: unknown, status = 200, additionalHeaders?: HeadersInit): 
   return new Response(JSON.stringify(payload), { status, headers });
 }
 
-async function readLimitedText(request: Request, limit = MAX_JSON_BYTES): Promise<string> {
-  if (!request.body) return "";
-  const reader = request.body.getReader();
+async function readLimitedBytes(
+  body: ReadableStream<Uint8Array> | null,
+  limit: number,
+): Promise<Uint8Array> {
+  if (!body) return new Uint8Array();
+  const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
 
@@ -48,7 +52,11 @@ async function readLimitedText(request: Request, limit = MAX_JSON_BYTES): Promis
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder().decode(bytes);
+  return bytes;
+}
+
+async function readLimitedText(request: Request, limit = MAX_JSON_BYTES): Promise<string> {
+  return new TextDecoder().decode(await readLimitedBytes(request.body, limit));
 }
 
 function parseJson(raw: string): unknown {
@@ -220,6 +228,54 @@ async function hasAccess(request: Request, env: Env): Promise<boolean> {
   return hasValidAccessCookie(request, env.SESSION_SECRET);
 }
 
+async function articleImageResponse(request: Request, env: Env, url: URL): Promise<Response> {
+  if (!(await hasAccess(request, env))) {
+    return json({ ok: false, error: "Pemeriksaan pembaca diperlukan." }, 401);
+  }
+  const editionDate = url.searchParams.get("edisi") ?? "";
+  const rankText = url.searchParams.get("berita") ?? "";
+  const articleRank = Number(rankText);
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(editionDate) || !Number.isInteger(articleRank) || articleRank < 1 || articleRank > 8) {
+    return json({ ok: false, error: "Rujukan gambar berita tidak sah." }, 400);
+  }
+
+  const imageUrl = await readArticleImageUrl(env.DB, editionDate, articleRank);
+  if (!imageUrl) return json({ ok: false, error: "Gambar berita tidak tersedia." }, 404);
+  try {
+    const parsedImageUrl = new URL(imageUrl);
+    if (parsedImageUrl.protocol !== "https:") throw new Error("insecure-image-url");
+    const upstream = await fetch(parsedImageUrl, {
+      headers: { accept: "image/avif,image/webp,image/*" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(6_000),
+    });
+    const contentType = upstream.headers.get("content-type")?.split(";", 1)[0] ?? "";
+    const declaredLength = Number(upstream.headers.get("content-length"));
+    if (
+      !upstream.ok ||
+      !contentType.startsWith("image/") ||
+      (Number.isFinite(declaredLength) && declaredLength > MAX_ARTICLE_IMAGE_BYTES)
+    ) {
+      return json({ ok: false, error: "Gambar penerbit tidak dapat dimuat." }, 502);
+    }
+    const bytes = await readLimitedBytes(upstream.body, MAX_ARTICLE_IMAGE_BYTES);
+    const imageBody = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    ) as ArrayBuffer;
+    return new Response(imageBody, {
+      headers: {
+        "cache-control": "private, no-store",
+        "content-type": contentType,
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+      },
+    });
+  } catch {
+    return json({ ok: false, error: "Gambar penerbit tidak dapat dimuat." }, 502);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -244,10 +300,26 @@ export default {
       if (!(await hasAccess(request, env))) {
         return json({ ok: false, error: "Pemeriksaan pembaca diperlukan." }, 401);
       }
-      const edition = await readLatestEdition(env.DB);
+      const editionDate = url.searchParams.get("edisi") ?? undefined;
+      if (editionDate && !/^\d{4}-\d{2}-\d{2}$/u.test(editionDate)) {
+        return json({ ok: false, error: "Tanggal edisi tidak sah." }, 400);
+      }
+      const edition = await readEdition(env.DB, editionDate);
       return edition
         ? json({ ok: true, edition })
-        : json({ ok: false, error: "Edisi pertama sedang dihimpun." }, 404);
+        : json(
+            {
+              ok: false,
+              error: editionDate
+                ? "Edisi yang diminta tidak ditemukan."
+                : "Edisi pertama sedang dihimpun.",
+            },
+            404,
+          );
+    }
+
+    if (url.pathname === "/api/article-image" && request.method === "GET") {
+      return articleImageResponse(request, env, url);
     }
 
     if (

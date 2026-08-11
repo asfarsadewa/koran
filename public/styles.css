@@ -392,16 +392,23 @@ main,
 }
 
 .lead-link,
-.wire-story,
-.story-card {
-  position: relative;
+.story-link,
+.story-card__link {
   display: block;
+  color: inherit;
   text-decoration: none;
 }
 
+#lead-story,
+.wire-story,
+.story-card {
+  position: relative;
+}
+
 .lead-link:focus-visible,
-.wire-story:focus-visible,
-.story-card:focus-visible {
+.story-link:focus-visible,
+.story-card__link:focus-visible,
+.story-share-button:focus-visible {
   outline: 4px solid var(--ink);
   outline-offset: 5px;
 }
@@ -528,11 +535,65 @@ main,
 }
 
 .lead-link:hover .lead-headline,
-.wire-story:hover h3,
-.story-card:hover h2 {
+.story-link:hover h3,
+.story-card__link:hover h2 {
   text-decoration: underline;
   text-decoration-thickness: 0.055em;
   text-underline-offset: 0.08em;
+}
+
+.story-share-button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  margin: 16px 0 0 auto;
+  padding: 7px 10px 6px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 2px 2px 0 var(--ink);
+  font: 830 11px/1 "Roboto Condensed JM", "Arial Narrow", sans-serif;
+  letter-spacing: 0.105em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.story-share-button::before {
+  content: "✂";
+  font-size: 15px;
+  line-height: 0.7;
+}
+
+.story-share-button:hover:not(:disabled) {
+  color: var(--paper-bright);
+  background: var(--ink);
+}
+
+.story-share-button:active:not(:disabled) {
+  box-shadow: 0 0 0 var(--ink);
+  transform: translate(2px, 2px);
+}
+
+.story-share-button:disabled {
+  opacity: 0.58;
+  cursor: wait;
+}
+
+.story-share-button.is-printing::before {
+  content: "•••";
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.wire-story .story-share-button {
+  min-height: 30px;
+  margin-top: 10px;
+  padding: 5px 7px 4px;
+  font-size: 9px;
+  box-shadow: 1px 1px 0 var(--ink);
 }
 
 .world-wire {
@@ -664,13 +725,16 @@ main,
 }
 
 .story-card:nth-child(4) {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.5fr);
   grid-column: 1 / -1;
-  gap: 32px;
-  align-items: start;
   border-top: var(--heavy-rule);
   border-right: 0;
+}
+
+.story-card:nth-child(4) .story-card__link {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.5fr);
+  gap: 32px;
+  align-items: start;
 }
 
 .story-card h2 {
@@ -698,6 +762,34 @@ main,
 
 .story-card .impact-note {
   font-size: 14px;
+}
+
+.is-shared-target {
+  outline: 4px double var(--ink);
+  outline-offset: 7px;
+  animation: shared-clipping-mark 1.1s steps(2, end) 2;
+}
+
+@keyframes shared-clipping-mark {
+  50% {
+    outline-color: transparent;
+  }
+}
+
+.share-status {
+  position: fixed;
+  z-index: 120;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  max-width: min(440px, calc(100vw - 28px));
+  padding: 11px 14px 9px;
+  color: var(--paper-bright);
+  background: var(--ink);
+  border: 3px double var(--paper-bright);
+  box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.5);
+  font: 820 12px/1.25 "Roboto Condensed JM", "Arial Narrow", sans-serif;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
 
 .empty-edition {
@@ -1065,6 +1157,10 @@ html[lang="zh-Hans"] .colophon p {
     border-right: 0;
   }
 
+  .story-card:nth-child(4) .story-card__link {
+    display: block;
+  }
+
   .story-card:first-child {
     border-top: 0;
   }
@@ -1073,6 +1169,15 @@ html[lang="zh-Hans"] .colophon p {
   .story-card:nth-child(4) h2 {
     margin-bottom: 12px;
     font-size: clamp(36px, 11vw, 54px);
+  }
+
+  .story-share-button,
+  .wire-story .story-share-button {
+    min-height: 44px;
+    margin-top: 15px;
+    padding: 10px 12px 9px;
+    font-size: 11px;
+    box-shadow: 2px 2px 0 var(--ink);
   }
 
   .colophon {
@@ -1101,6 +1206,10 @@ html[lang="zh-Hans"] .colophon p {
     animation: none;
   }
 
+  .is-shared-target {
+    animation: none;
+  }
+
   .newsprint.is-language-shifting::before {
     animation: none;
   }
@@ -1124,6 +1233,12 @@ html[lang="zh-Hans"] .colophon p {
   }
 
   .language-switch {
+    display: none;
+  }
+
+
+  .story-share-button,
+  .share-status {
     display: none;
   }
 }

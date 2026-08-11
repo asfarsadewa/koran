@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { publishEdition, readLatestEdition } from "../src/database";
+import {
+  publishEdition,
+  readArticleImageUrl,
+  readEdition,
+  readLatestEdition,
+} from "../src/database";
 import { validEditionPublish } from "./fixtures";
 
 interface PreparedCall {
@@ -162,6 +167,15 @@ describe("readLatestEdition", () => {
       dateline: "日内瓦",
     });
   });
+
+  it("selects an archived edition by its exact publication date", async () => {
+    const fake = fakeDatabase({ edition: null });
+
+    await expect(readEdition(fake.database, "2026-08-09")).resolves.toBeNull();
+
+    expect(fake.calls[0]?.sql).toContain("WHERE e.edition_date = ?");
+    expect(fake.calls[0]?.args).toEqual(["2026-08-09"]);
+  });
 });
 
 describe("publishEdition", () => {
@@ -212,5 +226,19 @@ describe("publishEdition", () => {
       edition.translations.zhHans.articles[0]?.dateline,
       edition.translations.zhHans.articles[0]?.impact,
     ]);
+  });
+});
+
+describe("readArticleImageUrl", () => {
+  it("looks up only the stored image for an edition and rank", async () => {
+    const fake = fakeDatabase({
+      edition: { image_url: "https://images.example.com/world/crisis-photo.jpg" },
+    });
+
+    await expect(readArticleImageUrl(fake.database, "2026-08-11", 1)).resolves.toBe(
+      "https://images.example.com/world/crisis-photo.jpg",
+    );
+    expect(fake.calls[0]?.args).toEqual(["2026-08-11", 1]);
+    expect(fake.calls[0]?.sql).toContain("WHERE edition_id = ? AND rank = ?");
   });
 });

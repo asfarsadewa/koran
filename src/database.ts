@@ -45,18 +45,22 @@ function hasChineseTranslation(article: ArticleRow): article is TranslatedArticl
   );
 }
 
-export async function readLatestEdition(database: D1Database): Promise<PublishedEdition | null> {
-  const edition = await database
-    .prepare(
-      `SELECT e.id, e.edition_date, e.issue_number, e.masthead_dek, e.published_at,
-              e.curator_model, e.is_demo, et.masthead_dek AS masthead_dek_zh
-       FROM editions e
-       LEFT JOIN edition_translations et
-         ON et.edition_id = e.id AND et.locale = 'zh-Hans'
-       ORDER BY edition_date DESC
-       LIMIT 1`,
-    )
-    .first<EditionRow>();
+export async function readEdition(
+  database: D1Database,
+  editionDate?: string,
+): Promise<PublishedEdition | null> {
+  const editionQuery = database.prepare(
+    `SELECT e.id, e.edition_date, e.issue_number, e.masthead_dek, e.published_at,
+            e.curator_model, e.is_demo, et.masthead_dek AS masthead_dek_zh
+     FROM editions e
+     LEFT JOIN edition_translations et
+       ON et.edition_id = e.id AND et.locale = 'zh-Hans'
+     ${editionDate ? "WHERE e.edition_date = ?" : "ORDER BY e.edition_date DESC"}
+     LIMIT 1`,
+  );
+  const edition = editionDate
+    ? await editionQuery.bind(editionDate).first<EditionRow>()
+    : await editionQuery.first<EditionRow>();
 
   if (!edition) return null;
 
@@ -119,6 +123,27 @@ export async function readLatestEdition(database: D1Database): Promise<Published
     articles,
     ...(translations ? { translations } : {}),
   };
+}
+
+export async function readLatestEdition(database: D1Database): Promise<PublishedEdition | null> {
+  return readEdition(database);
+}
+
+export async function readArticleImageUrl(
+  database: D1Database,
+  editionDate: string,
+  articleRank: number,
+): Promise<string | null> {
+  const row = await database
+    .prepare(
+      `SELECT image_url
+       FROM articles
+       WHERE edition_id = ? AND rank = ?
+       LIMIT 1`,
+    )
+    .bind(editionDate, articleRank)
+    .first<{ image_url: string | null }>();
+  return row?.image_url ?? null;
 }
 
 export async function publishEdition(

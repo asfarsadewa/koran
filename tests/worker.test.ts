@@ -83,6 +83,23 @@ function editionDatabase(): D1Database {
   } as unknown as D1Database;
 }
 
+function articleImageDatabase(imageUrl: string | null): D1Database {
+  return {
+    prepare(sql: string) {
+      expect(sql).toContain("FROM articles");
+      const statement = {
+        bind() {
+          return statement;
+        },
+        async first<T>() {
+          return (imageUrl ? { image_url: imageUrl } : { image_url: null }) as T;
+        },
+      };
+      return statement as unknown as D1PreparedStatement;
+    },
+  } as unknown as D1Database;
+}
+
 function requestWithCookie(url: string, setCookie: string): Request {
   return new Request(url, {
     headers: { cookie: setCookie.slice(0, setCookie.indexOf(";")) },
@@ -189,6 +206,70 @@ describe("Worker public and protected routes", () => {
       ok: true,
       edition: { editionDate: "2026-08-09", isDemo: false },
     });
+  });
+
+  it("accepts a dated edition link and rejects malformed archive dates", async () => {
+    const setCookie = await createAccessCookie("session-secret-test", 600);
+    const { env } = createEnv({ database: editionDatabase() });
+    const archived = await worker.fetch(
+      requestWithCookie("https://koran.r3ptil.com/api/edition?edisi=2026-08-09", setCookie),
+      env,
+    );
+    const malformed = await worker.fetch(
+      requestWithCookie("https://koran.r3ptil.com/api/edition?edisi=kemarin", setCookie),
+      env,
+    );
+
+    expect(archived.status).toBe(200);
+    expect(malformed.status).toBe(400);
+    await expect(malformed.json()).resolves.toMatchObject({ error: "Tanggal edisi tidak sah." });
+  });
+
+  it("proxies only the stored article image for an authorized clipping", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), {
+          headers: { "content-type": "image/png", "content-length": "4" },
+        }),
+      ),
+    );
+    const setCookie = await createAccessCookie("session-secret-test", 600);
+    const { env } = createEnv({
+      database: articleImageDatabase("https://images.example.com/world/crisis-photo.png"),
+    });
+    const response = await worker.fetch(
+      requestWithCookie(
+        "https://koran.r3ptil.com/api/article-image?edisi=2026-08-11&berita=1",
+        setCookie,
+      ),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/png");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      new URL("https://images.example.com/world/crisis-photo.png"),
+      expect.objectContaining({ redirect: "follow" }),
+    );
+  });
+
+  it("rejects malformed clipping image references before querying D1", async () => {
+    const setCookie = await createAccessCookie("session-secret-test", 600);
+    const { env } = createEnv({ database: {} as D1Database });
+    const response = await worker.fetch(
+      requestWithCookie(
+        "https://koran.r3ptil.com/api/article-image?edisi=kemarin&berita=99",
+        setCookie,
+      ),
+      env,
+    );
+
+    expect(response.status).toBe(400);
   });
 });
 

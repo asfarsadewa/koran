@@ -6,6 +6,11 @@ import {
   hasChineseEdition,
   mixLanguageText,
 } from "./language.js";
+import {
+  buildStoryShareData,
+  renderStoryClipping,
+  storyShareFileName,
+} from "./share.js";
 
 const staticCopy = {
   "skip-link": { id: "Langsung ke berita utama", zhHans: "直接阅览头版新闻" },
@@ -84,6 +89,34 @@ const sectionLabels = {
   },
 };
 
+const shareCopy = {
+  id: {
+    button: "BAGIKAN KLIPING",
+    buttonLabel: "Bagikan kliping berita",
+    printing: "MENCETAK…",
+    downloaded: "KLIPING DIUNDUH",
+    copied: "TAUTAN KORAN DISALIN",
+    ready: "KLIPING SIAP · KETUK LAGI UNTUK MEMBAGIKAN",
+    failed: "KLIPING TIDAK DAPAT DICETAK — COBA LAGI",
+  },
+  zhHans: {
+    button: "分享剪报",
+    buttonLabel: "分享新闻剪报",
+    printing: "正在制版……",
+    downloaded: "剪报图片已下载",
+    copied: "报纸链接已复制",
+    ready: "剪报已就绪，请再次点击分享",
+    failed: "无法生成剪报，请重试",
+  },
+};
+
+const pageParameters = new URLSearchParams(window.location.search);
+const requestedEditionDate = pageParameters.get("edisi");
+const requestedLocale =
+  pageParameters.get("bahasa") === CHINESE_LOCALE ? CHINESE_LOCALE : INDONESIAN_LOCALE;
+const requestedArticleMatch = window.location.hash.match(/^#berita-([1-8])$/u);
+const requestedArticleRank = requestedArticleMatch ? Number(requestedArticleMatch[1]) : null;
+
 const elements = {
   newsprint: document.querySelector("#newsprint"),
   sectionStrip: document.querySelector(".section-strip"),
@@ -103,11 +136,29 @@ const elements = {
   languageSwitch: document.querySelector("#language-switch"),
   languageCurrent: document.querySelector("#language-current"),
   languageTarget: document.querySelector("#language-target"),
+  shareStatus: document.querySelector("#share-status"),
 };
 
 let currentEdition = null;
 let currentLocale = INDONESIAN_LOCALE;
 let languageIsChanging = false;
+let shareStatusTimer = 0;
+let requestedStoryRevealed = false;
+const clippingCache = new Map();
+const clippingPreparations = new WeakMap();
+const clippingObserver =
+  typeof IntersectionObserver === "function"
+    ? new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            clippingObserver.unobserve(entry.target);
+            clippingPreparations.get(entry.target)?.().catch(() => undefined);
+          }
+        },
+        { rootMargin: "900px 0px" },
+      )
+    : null;
 
 function make(tag, className, text, copyId) {
   const element = document.createElement(tag);
@@ -193,8 +244,170 @@ function externalLink(article, className, locale) {
   return link;
 }
 
+function showShareStatus(message) {
+  window.clearTimeout(shareStatusTimer);
+  elements.shareStatus.textContent = message;
+  elements.shareStatus.hidden = false;
+  shareStatusTimer = window.setTimeout(() => {
+    elements.shareStatus.hidden = true;
+  }, 4800);
+}
+
+function downloadClipping(blob, fileName) {
+  const downloadUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = downloadUrl;
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+}
+
+async function copyShareUrl(url) {
+  if (!navigator.clipboard?.writeText) return false;
+  try {
+    await navigator.clipboard.writeText(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clippingKey(article, locale) {
+  return currentEdition ? `${currentEdition.id}:${article.rank}:${locale}` : "";
+}
+
+function prepareStoryClipping(article, locale) {
+  if (!currentEdition) return Promise.reject(new Error("edition-unavailable"));
+  const key = clippingKey(article, locale);
+  const cached = clippingCache.get(key);
+  if (cached instanceof Blob) return Promise.resolve(cached);
+  if (cached) return cached;
+
+  const edition = currentEdition;
+  const preparation = renderStoryClipping({
+    article: {
+      ...article,
+      imageUrl: clippingImageUrl(article),
+      sectionLabel:
+        sectionLabels[localeKey(locale)][article.section] ??
+        (locale === CHINESE_LOCALE ? "国际" : "Dunia"),
+    },
+    editionDate: edition.editionDate,
+    issueNumber: edition.issueNumber,
+    locale,
+  })
+    .then((clipping) => {
+      clippingCache.set(key, clipping);
+      return clipping;
+    })
+    .catch((error) => {
+      clippingCache.delete(key);
+      throw error;
+    });
+  clippingCache.set(key, preparation);
+  return preparation;
+}
+
+async function shareStory(article, locale, button) {
+  if (!currentEdition || button.disabled) return;
+  const key = clippingKey(article, locale);
+  const labels = shareCopy[localeKey(locale)];
+  const originalLabel = labels.button;
+  button.disabled = true;
+  button.classList.add("is-printing");
+  button.textContent = labels.printing;
+
+  try {
+    const wasPrepared = clippingCache.get(key) instanceof Blob;
+    const clipping = wasPrepared ? clippingCache.get(key) : await prepareStoryClipping(article, locale);
+    if (!(clipping instanceof Blob)) throw new Error("clipping-unavailable");
+
+    const fileName = storyShareFileName(currentEdition.editionDate, article.rank);
+    const shareData = buildStoryShareData(
+      article.headline,
+      currentEdition.editionDate,
+      article.rank,
+      locale,
+    );
+    const file =
+      typeof File === "function" ? new File([clipping], fileName, { type: "image/png" }) : null;
+    let canShareFile = Boolean(file && typeof navigator.share === "function");
+    if (canShareFile && typeof navigator.canShare === "function") {
+      try {
+        canShareFile = navigator.canShare({ files: [file] });
+      } catch {
+        canShareFile = false;
+      }
+    }
+
+    if (
+      canShareFile &&
+      !wasPrepared &&
+      navigator.userActivation &&
+      !navigator.userActivation.isActive
+    ) {
+      showShareStatus(labels.ready);
+      return;
+    }
+
+    if (canShareFile) {
+      try {
+        await navigator.share({ ...shareData, files: [file] });
+        return;
+      } catch (error) {
+        const errorName =
+          error && typeof error === "object" && "name" in error ? String(error.name) : "";
+        if (errorName === "AbortError") return;
+        if (errorName === "NotAllowedError") {
+          showShareStatus(labels.ready);
+          return;
+        }
+      }
+    }
+
+    downloadClipping(clipping, fileName);
+    const copied = await copyShareUrl(shareData.url);
+    showShareStatus(`${labels.downloaded}${copied ? ` · ${labels.copied}` : ""}`);
+  } catch (error) {
+    console.error("story-share-failed", error);
+    showShareStatus(labels.failed);
+  } finally {
+    button.disabled = false;
+    button.classList.remove("is-printing");
+    button.textContent = originalLabel;
+  }
+}
+
+function storyShareButton(article, locale) {
+  const labels = shareCopy[localeKey(locale)];
+  const button = make("button", "story-share-button", labels.button);
+  button.type = "button";
+  button.dataset.articleRank = String(article.rank);
+  button.setAttribute("aria-label", `${labels.buttonLabel}: ${article.headline}`);
+  button.addEventListener("click", () => shareStory(article, locale, button));
+  const prepare = () => prepareStoryClipping(article, locale);
+  clippingPreparations.set(button, prepare);
+  if (clippingObserver) {
+    clippingObserver.observe(button);
+  } else {
+    window.setTimeout(() => prepare().catch(() => undefined), 350);
+  }
+  return button;
+}
+
+function clippingImageUrl(article) {
+  if (!article.imageUrl || !currentEdition) return undefined;
+  const url = new URL("/api/article-image", window.location.origin);
+  url.searchParams.set("edisi", currentEdition.editionDate);
+  url.searchParams.set("berita", String(article.rank));
+  return url.href;
+}
+
 function renderLead(article, locale) {
   const link = externalLink(article, "lead-link", locale);
+  link.id = `berita-${article.rank}`;
   const headline = make(
     "h2",
     "lead-headline",
@@ -209,22 +422,27 @@ function renderLead(article, locale) {
   link.append(storySection(article, locale), headline);
   if (figure) link.append(figure);
   link.append(deck, impactNote(article, locale), storySource(article, locale));
-  elements.lead.replaceChildren(link);
+  elements.lead.replaceChildren(link, storyShareButton(article, locale));
 }
 
 function renderWire(article, locale) {
-  const link = externalLink(article, "wire-story", locale);
+  const wrapper = make("article", "wire-story");
+  wrapper.id = `berita-${article.rank}`;
+  const link = externalLink(article, "story-link", locale);
   link.append(
     storySection(article, locale),
     make("h3", "", article.headline, `article-${article.rank}-headline`),
     make("p", "", article.dek, `article-${article.rank}-dek`),
     storySource(article, locale),
   );
-  return link;
+  wrapper.append(link, storyShareButton(article, locale));
+  return wrapper;
 }
 
 function renderCard(article, locale) {
-  const link = externalLink(article, "story-card", locale);
+  const wrapper = make("article", "story-card");
+  wrapper.id = `berita-${article.rank}`;
+  const link = externalLink(article, "story-card__link", locale);
   const heading = make("h2", "", article.headline, `article-${article.rank}-headline`);
   const copy = make("div", "story-card__copy");
   const figure = storyFigure(article);
@@ -235,7 +453,8 @@ function renderCard(article, locale) {
     storySource(article, locale),
   );
   link.append(storySection(article, locale), heading, copy);
-  return link;
+  wrapper.append(link, storyShareButton(article, locale));
+  return wrapper;
 }
 
 function buildCopyMap(edition, locale) {
@@ -302,6 +521,7 @@ function updateLanguageSwitch() {
 }
 
 function renderEdition(edition, locale = currentLocale) {
+  clippingObserver?.disconnect();
   const articles = [...edition.articles].sort((left, right) => left.rank - right.rank);
   if (articles.length !== 8) throw new Error("Susunan edisi tidak lengkap.");
   if (locale === CHINESE_LOCALE && !hasChineseEdition(edition)) {
@@ -349,6 +569,16 @@ function renderEdition(edition, locale = currentLocale) {
   elements.empty.hidden = true;
   elements.frontGrid.hidden = false;
   elements.storyGrid.hidden = false;
+
+  if (requestedArticleRank && !requestedStoryRevealed) {
+    requestedStoryRevealed = true;
+    window.requestAnimationFrame(() => {
+      const target = document.querySelector(`#berita-${requestedArticleRank}`);
+      if (!target) return;
+      target.classList.add("is-shared-target");
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
 }
 
 function animateLanguageChange(targetLocale) {
@@ -414,7 +644,9 @@ function showEmpty(message) {
 
 async function loadEdition() {
   try {
-    const response = await fetch("/api/edition", {
+    const editionEndpoint = new URL("/api/edition", window.location.origin);
+    if (requestedEditionDate) editionEndpoint.searchParams.set("edisi", requestedEditionDate);
+    const response = await fetch(editionEndpoint, {
       headers: { accept: "application/json" },
       credentials: "same-origin",
     });
@@ -424,7 +656,7 @@ async function loadEdition() {
       return;
     }
     currentEdition = payload.edition;
-    renderEdition(currentEdition);
+    renderEdition(currentEdition, requestedLocale);
   } catch (error) {
     console.error("edition-load-failed", error);
     showEmpty("Lembar berita tidak dapat dibuka. Muat ulang halaman beberapa saat lagi.");
