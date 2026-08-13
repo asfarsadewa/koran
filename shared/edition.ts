@@ -5,6 +5,7 @@ import {
   EDITION_KINDS,
   historicalDateFromPublication,
   ISO_DATE_PATTERN,
+  parseIsoDate,
   type EditionKind,
 } from "./calendar";
 
@@ -139,11 +140,16 @@ const chineseEditionSchema = z
     }
   });
 
+const calendarDate = z
+  .string()
+  .regex(ISO_DATE_PATTERN)
+  .refine((value) => parseIsoDate(value) !== null, "Date must exist on the calendar");
+
 export const editionInputSchema = z
   .object({
     kind: z.enum(EDITION_KINDS).default(DEFAULT_EDITION_KIND),
-    editionDate: z.string().regex(ISO_DATE_PATTERN),
-    publicationDate: z.string().regex(ISO_DATE_PATTERN).optional(),
+    editionDate: calendarDate,
+    publicationDate: calendarDate.optional(),
     issueNumber: z.number().int().positive().max(999_999),
     mastheadDek: z.string().trim().min(40).max(260),
     articles: z.array(articleSchema).length(8),
@@ -192,6 +198,9 @@ export const editionInputSchema = z
         });
         return;
       }
+      // The field-level check already rejects impossible dates; this keeps the
+      // refinement total so a bad date can never throw out of safeParse.
+      if (!parseIsoDate(edition.publicationDate)) return;
       const expected = historicalDateFromPublication(edition.publicationDate);
       if (edition.editionDate !== expected) {
         context.addIssue({

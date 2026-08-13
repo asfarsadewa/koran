@@ -143,6 +143,19 @@ export function extractCiteUrls(markup: string): string[] {
   return [...new Set(urls)];
 }
 
+/**
+ * Running tally of the candidates each parser drops, so the ledger handed to the
+ * curating model reports what was actually filtered instead of a constant zero.
+ */
+export interface HistoricalSkipLedger {
+  outsideWindow: number;
+  withoutTimestamp: number;
+}
+
+export function skipLedger(): HistoricalSkipLedger {
+  return { outsideWindow: 0, withoutTimestamp: 0 };
+}
+
 export interface ParsedHistoricalEvent {
   title: string;
   description: string;
@@ -189,6 +202,7 @@ export function parseYearMonthWikitext(
   editionDate: string,
   windowStart: number,
   windowEnd: number,
+  ledger: HistoricalSkipLedger = skipLedger(),
 ): ParsedHistoricalEvent[] {
   const editionParts = parseIsoDate(editionDate);
   if (!editionParts) return [];
@@ -196,13 +210,18 @@ export function parseYearMonthWikitext(
 
   for (const match of wikitext.matchAll(MONTH_BULLET)) {
     const startLabel = match[1] ?? "";
-    const rangeEndDay = match[2];
     const body = match[3] ?? "";
     const startParts = parseMonthDayLabel(startLabel, year);
-    if (!startParts) continue;
+    if (!startParts) {
+      ledger.withoutTimestamp += 1;
+      continue;
+    }
     const eventTime = Date.parse(eventDateIso(startParts.year, startParts.month, startParts.day));
     const fit = classifyWindowFit(eventTime, windowStart, windowEnd, editionParts, startParts);
-    if (!fit) continue;
+    if (!fit) {
+      ledger.outsideWindow += 1;
+      continue;
+    }
 
     const titles = extractWikiTitles(match[0]);
     const primaryTitle = titles[0];
@@ -218,7 +237,7 @@ export function parseYearMonthWikitext(
       title: cleanWikiText(primaryTitle ?? description, 300),
       description,
       eventDate: eventDateIso(startParts.year, startParts.month, startParts.day),
-      windowFit: rangeEndDay && fit === "month" ? "month" : fit,
+      windowFit: fit,
       sourceName: "Wikipedia",
       url,
       corroboratingUrls: extractCiteUrls(match[0]).filter((candidate) => candidate !== url),
@@ -249,6 +268,7 @@ export function parseOnThisDayPageWikitext(
   editionDate: string,
   windowStart: number,
   windowEnd: number,
+  ledger: HistoricalSkipLedger = skipLedger(),
 ): ParsedHistoricalEvent[] {
   const editionParts = parseIsoDate(editionDate);
   if (!editionParts) return [];
@@ -257,7 +277,10 @@ export function parseOnThisDayPageWikitext(
   for (const match of wikitext.matchAll(DAY_PAGE_BULLET)) {
     const year = Number(match[1]);
     const body = match[2] ?? "";
-    if (year !== editionParts.year) continue;
+    if (year !== editionParts.year) {
+      ledger.outsideWindow += 1;
+      continue;
+    }
     const eventTime = Date.parse(eventDateIso(year, editionParts.month, editionParts.day));
     const fit = classifyWindowFit(
       eventTime,
@@ -266,7 +289,10 @@ export function parseOnThisDayPageWikitext(
       editionParts,
       { year, month: editionParts.month, day: editionParts.day },
     );
-    if (!fit) continue;
+    if (!fit) {
+      ledger.outsideWindow += 1;
+      continue;
+    }
     const titles = extractWikiTitles(match[0]);
     const primaryTitle = titles[0];
     const url = primaryTitle ? wikipediaArticleUrl(primaryTitle) : null;
@@ -294,6 +320,7 @@ export function parseOnThisDayFeed(
   windowStart: number,
   windowEnd: number,
   searchQuery: string,
+  ledger: HistoricalSkipLedger = skipLedger(),
 ): ParsedHistoricalEvent[] {
   const editionParts = parseIsoDate(editionDate);
   if (!editionParts) return [];
@@ -304,7 +331,14 @@ export function parseOnThisDayFeed(
   for (const item of items) {
     const entry = record(item);
     const year = typeof entry?.year === "number" ? entry.year : Number(entry?.year);
-    if (year !== editionParts.year) continue;
+    if (!Number.isFinite(year)) {
+      ledger.withoutTimestamp += 1;
+      continue;
+    }
+    if (year !== editionParts.year) {
+      ledger.outsideWindow += 1;
+      continue;
+    }
     const pages = Array.isArray(entry?.pages) ? entry.pages : [];
     const page = pages.map(record).find((candidate) => candidate && text(candidate.title));
     const title = text(page?.titles && record(page.titles)?.normalized) ?? text(page?.title);
@@ -323,7 +357,10 @@ export function parseOnThisDayFeed(
       editionParts,
       { year, month: editionParts.month, day: editionParts.day },
     );
-    if (!fit) continue;
+    if (!fit) {
+      ledger.outsideWindow += 1;
+      continue;
+    }
 
     const thumbnail = text(record(page?.thumbnail)?.source);
     events.push({
@@ -394,11 +431,16 @@ function wikiApiUrl(params: Record<string, string>): URL {
   return url;
 }
 
+/**
+ * Reads the month section of a year chronology. The table of contents costs one
+ * request and the section body another, so the caller is told how many actually
+ * went out rather than assuming both always do.
+ */
 export async function fetchYearMonthWikitext(
   year: number,
   monthName: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<{ wikitext: string; requests: number }> {
   const toc = record(await wikipediaGet(wikiApiUrl({ action: "parse", page: String(year), prop: "sections" }), signal));
   const parse = record(toc?.parse);
   const sections = Array.isArray(parse?.sections) ? parse.sections : [];
@@ -406,14 +448,14 @@ export async function fetchYearMonthWikitext(
     .map(record)
     .find((section) => text(section?.line) === monthName);
   const index = text(monthSection?.index);
-  if (!index) return "";
+  if (!index) return { wikitext: "", requests: 1 };
   const body = record(
     await wikipediaGet(
       wikiApiUrl({ action: "parse", page: String(year), prop: "wikitext", section: index }),
       signal,
     ),
   );
-  return text(record(body?.parse)?.wikitext) ?? "";
+  return { wikitext: text(record(body?.parse)?.wikitext) ?? "", requests: 2 };
 }
 
 export async function fetchDayPageWikitext(
@@ -479,34 +521,49 @@ export async function collectHistoricalCandidates(
   if (!monthName) throw new Error("Kemarin edition month is invalid");
 
   let searchesRun = 0;
+  const ledger = skipLedger();
   const parsed: Array<ParsedHistoricalEvent & { imageUrl?: string }> = [];
 
-  const yearText = await fetchYearMonthWikitext(editionParts.year, monthName, signal);
-  searchesRun += 2;
+  const yearSection = await fetchYearMonthWikitext(editionParts.year, monthName, signal);
+  searchesRun += yearSection.requests;
   parsed.push(
-    ...parseYearMonthWikitext(yearText, editionParts.year, window.editionDate, windowStart, windowEnd),
+    ...parseYearMonthWikitext(
+      yearSection.wikitext,
+      editionParts.year,
+      window.editionDate,
+      windowStart,
+      windowEnd,
+      ledger,
+    ),
   );
 
   const dayText = await fetchDayPageWikitext(monthName, editionParts.day, signal);
   searchesRun += 1;
-  parsed.push(...parseOnThisDayPageWikitext(dayText, window.editionDate, windowStart, windowEnd));
+  parsed.push(
+    ...parseOnThisDayPageWikitext(dayText, window.editionDate, windowStart, windowEnd, ledger),
+  );
 
   for (const kind of ["events", "selected"] as const) {
     const feed = await wikipediaGet(onThisDayUrl(editionParts.month, editionParts.day, kind), signal);
     searchesRun += 1;
     parsed.push(
-      ...parseOnThisDayFeed(feed, window.editionDate, windowStart, windowEnd, `wikimedia:${kind}`),
+      ...parseOnThisDayFeed(
+        feed,
+        window.editionDate,
+        windowStart,
+        windowEnd,
+        `wikimedia:${kind}`,
+        ledger,
+      ),
     );
   }
 
   const byUrl = new Map<string, HistoricalCandidate>();
-  let excludedOutsideWindow = 0;
-  let excludedWithoutTimestamp = 0;
 
   for (const event of parsed) {
     const publishedAt = Date.parse(event.eventDate);
     if (!Number.isFinite(publishedAt)) {
-      excludedWithoutTimestamp += 1;
+      ledger.withoutTimestamp += 1;
       continue;
     }
     const candidate = toCandidate(event);
@@ -528,8 +585,8 @@ export async function collectHistoricalCandidates(
     searchWindowEnd: window.searchWindowEnd,
     editionDate: window.editionDate,
     publicationDate: window.publicationDate,
-    excludedOutsideWindow,
-    excludedWithoutTimestamp,
+    excludedOutsideWindow: ledger.outsideWindow,
+    excludedWithoutTimestamp: ledger.withoutTimestamp,
     results: ranked,
   });
 }

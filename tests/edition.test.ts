@@ -6,6 +6,7 @@ import {
   isLikelyDirectArticleUrl,
   isLikelyHistoricalSourceUrl,
   parseIsoDate,
+  resolvedPublicationDate,
 } from "../shared/edition";
 import { validEditionPublish, validKemarinPublish } from "./fixtures";
 
@@ -108,6 +109,37 @@ describe("kemarin editionInputSchema", () => {
       publicationDate: "2026-08-10",
     });
     expect(parsed.success).toBe(false);
+  });
+
+  it("reports a date that cannot exist instead of throwing out of safeParse", () => {
+    // 2026-02-31 satisfies the YYYY-MM-DD shape but is not a calendar day.
+    const parsed = editionInputSchema.safeParse({
+      ...validKemarinPublish(),
+      publicationDate: "2026-02-31",
+    });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues.map((issue) => issue.path.join("."))).toContain("publicationDate");
+
+    const printed = editionInputSchema.safeParse({
+      ...validEditionPublish(),
+      editionDate: "2026-02-30",
+      publicationDate: "2026-02-30",
+    });
+    expect(printed.success).toBe(false);
+  });
+});
+
+describe("resolvedPublicationDate", () => {
+  it("falls back to the printed date for today's edition", () => {
+    expect(resolvedPublicationDate("hari_ini", "2026-08-09")).toBe("2026-08-09");
+    expect(resolvedPublicationDate("hari_ini", "2026-08-09", "2026-08-09")).toBe("2026-08-09");
+  });
+
+  it("refuses to build a Kemarin edition id from an absent publication date", () => {
+    expect(() => resolvedPublicationDate("kemarin", "1991-08-09")).toThrow(
+      "Kemarin editions require the Perth publication date",
+    );
+    expect(resolvedPublicationDate("kemarin", "1991-08-09", "2026-08-09")).toBe("2026-08-09");
   });
 });
 

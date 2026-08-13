@@ -69,4 +69,22 @@ describe("story clipping sharing", () => {
     expect(share).toContain("KORAN.R3PTIL.COM");
     expect(share).toContain("LEMBAR KEMARIN");
   });
+
+  it("corrects the canonical address on the Kemarin sheet and keeps its copy in one table", async () => {
+    const [html, app] = await Promise.all([
+      readFile(resolve(root, "public/index.html"), "utf8"),
+      readFile(resolve(root, "public/app.js"), "utf8"),
+    ]);
+
+    // The static document is served for both routes, so it still names the morning sheet.
+    expect(html).toContain('<link rel="canonical" href="https://koran.r3ptil.com/">');
+    expect(app).toContain('document.querySelector(\'link[rel="canonical"]\')');
+    expect(app).toContain('document.querySelector(\'meta[property="og:url"]\')');
+    expect(app).toContain('new URL("/kemarin", SHARE_SITE_URL)');
+
+    // Both the pre-load and post-render paths read the same Kemarin copy table.
+    expect(app.match(/POKOK BERITA KEMARIN/gu)).toHaveLength(1);
+    expect(app.match(/function kemarinCopy\(/gu)).toHaveLength(1);
+    expect(app.match(/kemarinCopy\(/gu)).toHaveLength(3);
+  });
 });

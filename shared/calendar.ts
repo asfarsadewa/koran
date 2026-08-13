@@ -52,5 +52,11 @@ export function resolvedPublicationDate(
   editionDate: string,
   publicationDate?: string,
 ): string {
-  return kind === "kemarin" ? (publicationDate ?? "") : (publicationDate ?? editionDate);
+  if (kind !== "kemarin") return publicationDate ?? editionDate;
+  // This value becomes the edition id and the uniqueness key, so an absent
+  // publication date must fail loudly rather than store an empty one.
+  if (!publicationDate) {
+    throw new Error("Kemarin editions require the Perth publication date");
+  }
+  return publicationDate;
 }

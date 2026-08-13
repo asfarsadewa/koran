@@ -137,6 +137,82 @@ describe("collectHistoricalCandidates", () => {
     expect(result.results[0]?.windowFit).toBe("exact");
   });
 
+  it("reports the candidates it actually discarded rather than a constant zero", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-13T00:00:00.000Z"));
+    const fetchMock = vi.fn().mockImplementation((input: URL) => {
+      const href = String(input);
+      if (href.includes("prop=sections")) {
+        return Response.json({ parse: { sections: [{ line: "August", index: "9" }] } });
+      }
+      if (href.includes("prop=wikitext") && href.includes("section=9")) {
+        return Response.json({
+          parse: {
+            wikitext: [
+              // Kept: the printed day itself.
+              "* [[August 13]] – [[Somali Civil War]] forces more families to leave Mogadishu after shelling.",
+              // Discarded: a different month of the same year.
+              "* [[December 25]] – [[Dissolution of the Soviet Union]] ends the union after the December accords.",
+              // Discarded: a day that does not exist in that month.
+              "* [[February 30]] – [[Unknown Event]] carries a date the calendar cannot hold at all.",
+            ].join("\n"),
+          },
+        });
+      }
+      if (href.includes("page=August_13")) {
+        // Discarded: the on-this-day page carries every year, not just the printed one.
+        return Response.json({
+          parse: { wikitext: "* [[1961]] – East Germany begins building the Berlin Wall in the city." },
+        });
+      }
+      if (href.includes("/onthisday/")) {
+        return Response.json({
+          events: [
+            { year: "not-a-year", text: "Undated entry.", pages: [{ title: "Undated" }] },
+            { year: 2015, text: "A later bombing.", pages: [{ title: "Later_Bombing" }] },
+          ],
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const resultPromise = collectHistoricalCandidates(window);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(result.results).toHaveLength(1);
+    // December bullet, the 1961 day-page line, and the 2015 feed entry — two feeds are polled.
+    expect(result.excludedOutsideWindow).toBe(4);
+    // The impossible 30 February bullet plus the non-numeric feed year from both feeds.
+    expect(result.excludedWithoutTimestamp).toBe(3);
+  });
+
+  it("counts only the requests a partial year sweep actually sends", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-13T00:00:00.000Z"));
+    const fetchMock = vi.fn().mockImplementation((input: URL) => {
+      const href = String(input);
+      // No August section, so the year chronology costs one request, not two.
+      if (href.includes("prop=sections")) {
+        return Response.json({ parse: { sections: [{ line: "July", index: "8" }] } });
+      }
+      if (href.includes("page=August_13")) {
+        return Response.json({ parse: { wikitext: "" } });
+      }
+      if (href.includes("/onthisday/")) return Response.json({ events: [] });
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const resultPromise = collectHistoricalCandidates(window);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(result.searchesRun).toBe(4);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it("reports a non-success Wikimedia response after the request boundary", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-14T00:00:00.000Z"));

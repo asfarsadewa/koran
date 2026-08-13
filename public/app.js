@@ -8,6 +8,7 @@ import {
 } from "./language.js";
 import {
   KEMARIN_SHEET,
+  SHARE_SITE_URL,
   buildStoryShareData,
   renderStoryClipping,
   storyShareFileName,
@@ -413,6 +414,47 @@ function currentSheet() {
   return currentEdition?.kind === KEMARIN_SHEET || isKemarinSheet ? KEMARIN_SHEET : "hari_ini";
 }
 
+/**
+ * Masthead copy that replaces the morning edition's wording on the Kemarin
+ * sheet. Applied twice — once before the edition arrives and again from the
+ * rendered edition — so the two paths read from this one table.
+ */
+function kemarinCopy(locale) {
+  const chinese = locale === CHINESE_LOCALE;
+  return [
+    ["top-purpose", chinese ? "昨日专页" : "LEMBAR KEMARIN"],
+    ["intro-label", chinese ? "昨日要闻" : "POKOK BERITA KEMARIN"],
+    ["edition-switch", chinese ? "今日" : "HARI INI"],
+    [
+      "empty-title",
+      chinese ? "昨日专页仍在汇编之中。" : "Lembar Kemarin masih dihimpun.",
+    ],
+    [
+      "empty-copy",
+      chinese
+        ? "编辑机器尚未交付昨日专页。请于西澳中部标准时间七时以后再行阅览。"
+        : "Mesin redaksi belum menyerahkan lembar Kemarin. Silakan datang kembali setelah pukul 07.00 WITA.",
+    ],
+    [
+      "about-copy",
+      chinese
+        ? "本页所载为三十五年前同日之人道灾祸摘要，依据当时记载与后来可核验之档案写成。摘要不能代替原始记载；请打开各则新闻查阅出处。"
+        : "Lembar ini memuat ikhtisar malapetaka kemanusiaan pada hari yang sama tiga puluh lima tahun lalu, disusun dari catatan sezaman dan arsip yang dapat diperiksa. Ringkasan tidak menggantikan catatan asli; buka setiap berita untuk membaca sumbernya.",
+    ],
+  ];
+}
+
+/**
+ * The Kemarin route is served the same static document as the morning edition,
+ * so its canonical address and Open Graph address are corrected here.
+ */
+function applySheetCanonical() {
+  if (!isKemarinSheet) return;
+  const sheetUrl = new URL("/kemarin", SHARE_SITE_URL).toString();
+  document.querySelector('link[rel="canonical"]')?.setAttribute("href", sheetUrl);
+  document.querySelector('meta[property="og:url"]')?.setAttribute("content", sheetUrl);
+}
+
 function shareEditionDate() {
   return currentEdition?.publicationDate ?? currentEdition?.editionDate ?? "";
 }
@@ -518,31 +560,7 @@ function buildCopyMap(edition, locale) {
   );
 
   if (edition.kind === KEMARIN_SHEET || isKemarinSheet) {
-    copy.set(
-      "top-purpose",
-      locale === CHINESE_LOCALE ? "昨日专页" : "LEMBAR KEMARIN",
-    );
-    copy.set(
-      "intro-label",
-      locale === CHINESE_LOCALE ? "昨日要闻" : "POKOK BERITA KEMARIN",
-    );
-    copy.set("edition-switch", locale === CHINESE_LOCALE ? "今日" : "HARI INI");
-    copy.set(
-      "empty-title",
-      locale === CHINESE_LOCALE ? "昨日专页仍在汇编之中。" : "Lembar Kemarin masih dihimpun.",
-    );
-    copy.set(
-      "empty-copy",
-      locale === CHINESE_LOCALE
-        ? "编辑机器尚未交付昨日专页。请于西澳中部标准时间七时以后再行阅览。"
-        : "Mesin redaksi belum menyerahkan lembar Kemarin. Silakan datang kembali setelah pukul 07.00 WITA.",
-    );
-    copy.set(
-      "about-copy",
-      locale === CHINESE_LOCALE
-        ? "本页所载为三十五年前同日之人道灾祸摘要，依据当时记载与后来可核验之档案写成。摘要不能代替原始记载；请打开各则新闻查阅出处。"
-        : "Lembar ini memuat ikhtisar malapetaka kemanusiaan pada hari yang sama tiga puluh lima tahun lalu, disusun dari catatan sezaman dan arsip yang dapat diperiksa. Ringkasan tidak menggantikan catatan asli; buka setiap berita untuk membaca sumbernya.",
-    );
+    for (const [id, text] of kemarinCopy(locale)) copy.set(id, text);
   }
 
   for (const original of edition.articles) {
@@ -743,29 +761,9 @@ elements.languageSwitch.addEventListener("click", () => {
 
 document.documentElement.classList.toggle("is-kemarin", isKemarinSheet);
 elements.kemarinNotice.hidden = !isKemarinSheet;
+applySheetCanonical();
 if (isKemarinSheet) {
-  applyStaticCopy(
-    new Map([
-      ["top-purpose", requestedLocale === CHINESE_LOCALE ? "昨日专页" : "LEMBAR KEMARIN"],
-      [
-        "intro-label",
-        requestedLocale === CHINESE_LOCALE ? "昨日要闻" : "POKOK BERITA KEMARIN",
-      ],
-      ["edition-switch", requestedLocale === CHINESE_LOCALE ? "今日" : "HARI INI"],
-      [
-        "empty-title",
-        requestedLocale === CHINESE_LOCALE
-          ? "昨日专页仍在汇编之中。"
-          : "Lembar Kemarin masih dihimpun.",
-      ],
-      [
-        "empty-copy",
-        requestedLocale === CHINESE_LOCALE
-          ? "编辑机器尚未交付昨日专页。请于西澳中部标准时间七时以后再行阅览。"
-          : "Mesin redaksi belum menyerahkan lembar Kemarin. Silakan datang kembali setelah pukul 07.00 WITA.",
-      ],
-    ]),
-  );
+  applyStaticCopy(new Map(kemarinCopy(requestedLocale)));
 }
 updateLanguageSwitch();
 updateEditionSwitch();
