@@ -20,3 +20,5 @@ skills-lock.json
 *.tsbuildinfo
 .DS_Store
 Thumbs.db
+
+.env*
