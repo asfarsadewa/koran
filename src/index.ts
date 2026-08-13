@@ -359,8 +359,11 @@ export default {
     }
 
     if (isKemarinPath(url.pathname)) {
+      // Ask for "/" rather than "/index.html": the default html_handling
+      // ("auto-trailing-slash") answers /index.html with a 307 to /, which
+      // would bounce the reader off the Kemarin sheet and onto today's.
       const assetUrl = new URL(request.url);
-      assetUrl.pathname = "/index.html";
+      assetUrl.pathname = "/";
       return hardenAssetResponse(await env.ASSETS.fetch(new Request(assetUrl, request)));
     }
 

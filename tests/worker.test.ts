@@ -9,15 +9,36 @@ import { validEditionPublish, validKemarinPublish } from "./fixtures";
 
 interface TestEnvOptions {
   assetsResponse?: Response;
+  assetsRouter?: (request: Request) => Response;
   database?: D1Database;
   overrides?: Partial<Omit<Env, "ACCESS_TTL_SECONDS">> & { ACCESS_TTL_SECONDS?: string };
 }
 
+/**
+ * Mimics the asset binding under the default html_handling
+ * ("auto-trailing-slash"): "/index.html" is answered with a 307 to "/", and
+ * only the canonical path returns the document itself.
+ */
+function htmlHandlingAssets(request: Request): Response {
+  const { pathname } = new URL(request.url);
+  if (pathname === "/index.html") {
+    return new Response(null, { status: 307, headers: { location: "/" } });
+  }
+  if (pathname === "/" || pathname === "/index") {
+    return new Response("<!doctype html><title>Juara Merdeka</title>", {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+  return new Response("asset", { headers: { "content-type": "text/plain; charset=utf-8" } });
+}
+
 function createEnv(options: TestEnvOptions = {}) {
-  const assetsFetch = vi.fn().mockResolvedValue(
-    options.assetsResponse ??
-      new Response("asset", { headers: { "content-type": "text/plain; charset=utf-8" } }),
-  );
+  const assetsFetch = options.assetsRouter
+    ? vi.fn().mockImplementation(async (input: Request) => options.assetsRouter!(input))
+    : vi.fn().mockResolvedValue(
+        options.assetsResponse ??
+          new Response("asset", { headers: { "content-type": "text/plain; charset=utf-8" } }),
+      );
   const env = {
     DB: options.database ?? ({} as D1Database),
     ASSETS: { fetch: assetsFetch } as unknown as Fetcher,
@@ -177,23 +198,26 @@ describe("Worker public and protected routes", () => {
     expect(assetsFetch).toHaveBeenCalledOnce();
   });
 
-  it("rewrites /kemarin to the newspaper shell after access", async () => {
+  it("serves the newspaper shell on /kemarin instead of bouncing back to today's sheet", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-09T00:00:00.000Z"));
     const setCookie = await createAccessCookie("session-secret-test", 600);
-    const { env, assetsFetch } = createEnv({
-      assetsResponse: new Response("<!doctype html><title>Juara Merdeka</title>", {
-        headers: { "content-type": "text/html; charset=utf-8" },
-      }),
-    });
-    const response = await worker.fetch(
-      requestWithCookie("https://koran.r3ptil.com/kemarin", setCookie),
-      env,
-    );
+    const { env, assetsFetch } = createEnv({ assetsRouter: htmlHandlingAssets });
 
-    expect(response.status).toBe(200);
-    const forwarded = assetsFetch.mock.calls[0]?.[0] as Request;
-    expect(new URL(forwarded.url).pathname).toBe("/index.html");
+    for (const path of ["/kemarin", "/kemarin/"]) {
+      assetsFetch.mockClear();
+      const response = await worker.fetch(
+        requestWithCookie(`https://koran.r3ptil.com${path}`, setCookie),
+        env,
+      );
+
+      // A 307 here would send the reader to "/" and quietly show today's edition.
+      expect(response.status).toBe(200);
+      expect(response.headers.get("location")).toBeNull();
+      await expect(response.text()).resolves.toContain("Juara Merdeka");
+      const forwarded = assetsFetch.mock.calls[0]?.[0] as Request;
+      expect(new URL(forwarded.url).pathname).toBe("/");
+    }
   });
 
   it("shows Kemarin social metadata on the ungated /kemarin document", async () => {
