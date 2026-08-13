@@ -1,0 +1,5 @@
+---
+cron: "0 23 * * *"
+---
+
+Susun dan terbitkan lembar Kemarin Juara Merdeka untuk pukul 07.00 WITA. Ini bukan edisi hari ini. Panggil kemarin_publication_context, muat pedoman gaya, kumpulkan calon dari arsip historis untuk tanggal cetak (hari ini dikurangi 35 tahun), pilih tepat delapan peristiwa berdampak negatif yang berlainan, periksa sumbernya, lalu kirim satu lembar dwibahasa lengkap melalui publish_edition dengan kind kemarin serta publicationDate. Tulis naskah seolah-olah koran itu terbit pada tanggal historis itu; jangan menulis “tiga puluh lima tahun lalu” di dalam tajuk, dek, atau akibat. Ini tugas terjadwal tanpa pembaca yang dapat menjawab pertanyaan; apabila sumber tepat hari itu belum memadai, pakai peristiwa berdekatan atau krisis yang masih berlangsung pada tanggal itu, dan jangan mengarang.

@@ -20,6 +20,9 @@ describe("story clipping sharing", () => {
     expect(buildEditionShareUrl("2026-08-11", 3, "zh-Hans")).toBe(
       "https://koran.r3ptil.com/?edisi=2026-08-11&bahasa=zh-Hans#berita-3",
     );
+    expect(buildEditionShareUrl("2026-08-11", 1, "id", SHARE_SITE_URL, "kemarin")).toBe(
+      "https://koran.r3ptil.com/kemarin?edisi=2026-08-11#berita-1",
+    );
   });
 
   it("shares the Koran page rather than the publisher source", () => {
@@ -46,6 +49,9 @@ describe("story clipping sharing", () => {
       readFile(resolve(root, "public/share.js"), "utf8"),
     ]);
 
+    expect(html).toContain('id="edition-switch"');
+    expect(html).toContain('href="/kemarin"');
+    expect(html).toContain('id="kemarin-notice"');
     expect(html).toContain('id="share-status"');
     expect(html).toContain('aria-live="polite"');
     expect(app).toContain('make("button", "story-share-button"');
@@ -54,9 +60,13 @@ describe("story clipping sharing", () => {
     expect(app).toContain("navigator.userActivation");
     expect(app).toContain("IntersectionObserver");
     expect(app).toContain('new URL("/api/article-image"');
+    expect(app).toContain('searchParams.set("jenis", KEMARIN_SHEET)');
+    expect(css).toContain(".edition-switch");
+    expect(css).toContain(".kemarin-notice");
     expect(css).toContain(".story-share-button");
     expect(css).toContain("min-height: 44px");
     expect(share).toContain("canvas.toBlob");
     expect(share).toContain("KORAN.R3PTIL.COM");
+    expect(share).toContain("LEMBAR KEMARIN");
   });
 });

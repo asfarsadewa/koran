@@ -6,6 +6,8 @@ Alamat produksi: [koran.r3ptil.com](https://koran.r3ptil.com)
 
 Tampilan pembaca meniru lembar koran Indonesia era 1980-an: hitam-putih, tipografi padat, pembagian kolom keras, tekstur tinta dan kertas, tanpa rupa aplikasi web modern. Semua gambar pilihan dipaksa menjadi monokrom dengan raster halftone. Tombol `中文版` di sudut kanan atas membuka edisi Tionghoa Sederhana; pergantian dilakukan seperti penggantian acuan cetak, dengan aksara Tionghoa berangsur menggantikan huruf Latin. Tata letak dan gerak tersebut tetap terbaca di telepon genggam serta menghormati pilihan pengurangan gerak.
 
+Lembar **Kemarin** di [`/kemarin`](https://koran.r3ptil.com/kemarin) memakai tata letak yang sama, tetapi mencetak tanggal hari kalender Perth dikurangi 35 tahun. Mesin redaksi menyusun delapan peristiwa berdampak buruk dari arsip ensiklopedia dan catatan sezaman, lalu menuliskannya seolah-olah koran itu terbit pada pagi historis itu. Kepala lembar menandai bingkai waktu; naskah berita tidak menyebut “tiga puluh lima tahun lalu”. Tombol `KEMARIN` / `HARI INI` pada kepala koran menukar kedua lembar tanpa kehilangan tanggal edisi atau bahasa.
+
 Setiap berita mempunyai tombol **Bagikan Kliping**. Tombol ini mencetak kartu PNG 1080 × 1350 langsung di peramban dengan kepala koran, tipografi, tekstur kertas, gambar monokrom, ikhtisar, dampak, dan nama sumber yang sama dengan lembar pembaca. Agar gambar penerbit dapat dicetak ke kanvas tanpa kehilangan foto karena pembatasan lintas-asal, Worker meneruskan hanya alamat gambar yang sudah tersimpan untuk tanggal dan nomor berita tersebut; rute ini tetap memerlukan cookie pembaca, membatasi ukuran respons, dan tidak menerima alamat gambar bebas dari klien. Pada peramban seluler yang mendukung Web Share, gambar dikirim sebagai berkas bersama tautan ke edisi serta nomor berita yang tetap; tautan tersebut selalu menuju `koran.r3ptil.com`, bukan situs penerbit sumber. Apabila berbagi berkas tidak didukung, PNG diunduh dan alamat Koran disalin agar dapat dilampirkan secara manual. Edisi Tionghoa menghasilkan kliping serta tautan berbahasa Tionghoa.
 
 Apabila alamat produksi dibagikan melalui wahana pergaulan, kepala koran, uraian ringkas, alamat kanonik, serta panji hitam-putih berukuran 1200 × 630 piksel disampaikan melalui Open Graph dan Twitter Card. Panji tersebut sengaja dapat dibaca tanpa cookie, sedangkan isi edisi dan aset pembaca tetap berada di belakang pemeriksaan Turnstile.
@@ -16,9 +18,9 @@ Apabila alamat produksi dibagikan melalui wahana pergaulan, kepala koran, uraian
 
 Eve dan Cloudflare mengerjakan bagian yang berbeda:
 
-1. **Agen redaksi Eve (Node.js 24 pada Vercel)** meminta calon berita dari rentang kalender Brave News yang meliputi jendela redaksi, kemudian menyaring waktu terbitnya sendiri hingga tepat 36 jam. Hasil tanpa waktu terbit yang dapat dipastikan serta hasil di luar jendela ditolak. Agen lalu memeriksa silang sumber dan menyusun tepat delapan berita beserta naskah Tionghoa Sederhana yang sepadan memakai OpenAI Responses API dan model `gpt-5.6-sol`. Naskah akhir ditandatangani dengan HMAC-SHA256.
+1. **Agen redaksi Eve (Node.js 24 pada Vercel)** menyusun dua lembar pada jadwal yang sama. Edisi hari ini meminta calon dari rentang kalender Brave News yang meliputi jendela redaksi, kemudian menyaring waktu terbitnya sendiri hingga tepat 36 jam. Hasil tanpa waktu terbit yang dapat dipastikan serta hasil di luar jendela ditolak. Lembar Kemarin menggeser jendela itu 35 tahun ke belakang dan meminta calon dari kronologi Wikipedia, halaman “hari ini dalam sejarah”, serta umpan Wikimedia On This Day. Agen lalu memeriksa silang sumber dan menyusun tepat delapan berita beserta naskah Tionghoa Sederhana yang sepadan memakai OpenAI Responses API dan model `gpt-5.6-sol`. Naskah akhir ditandatangani dengan HMAC-SHA256.
 2. **Cloudflare Worker** menerima naskah yang sah melalui `POST /api/editions`, memvalidasi kelengkapan kedua bahasa dengan Zod, dan menyimpan edisi secara idempoten berdasarkan tanggal.
-3. **Cloudflare D1** menyimpan satu susunan sumber bersama naskah Indonesia dan Tionghoa dalam tabel terjemahan yang terkait. Tidak ada basis data berbayar atau penyimpanan gambar milik sendiri. Edisi lama tanpa terjemahan tetap dapat dibaca, tetapi pengalih bahasa baru diaktifkan apabila delapan terjemahan tersedia seluruhnya. Alamat kliping memakai `?edisi=YYYY-MM-DD#berita-N` supaya berita yang dibagikan tetap membuka lembar yang sesuai setelah edisi baru terbit.
+3. **Cloudflare D1** menyimpan satu susunan sumber bersama naskah Indonesia dan Tionghoa dalam tabel terjemahan yang terkait. Setiap baris edisi mempunyai `kind` `hari_ini` atau `kemarin` dan diindeks menurut tanggal perakitan Perth; tanggal yang tercetak pada lembar Kemarin ialah hari itu dikurangi 35 tahun. Tidak ada basis data berbayar atau penyimpanan gambar milik sendiri. Edisi lama tanpa terjemahan tetap dapat dibaca, tetapi pengalih bahasa baru diaktifkan apabila delapan terjemahan tersedia seluruhnya. Alamat kliping memakai `?edisi=YYYY-MM-DD#berita-N` pada `/` atau `/kemarin` supaya berita yang dibagikan tetap membuka lembar yang sesuai setelah edisi baru terbit.
 4. **Turnstile** memeriksa pembaca. Setelah Siteverify berhasil, Worker menerbitkan cookie akses `HttpOnly`, `Secure`, dan bertanda tangan selama 12 jam.
 5. **Static Assets** dari Worker menampilkan edisi terkini; setiap berita merupakan tautan ke sumber eksternal.
 
@@ -26,7 +28,7 @@ Pemisahan ini disengaja. Vercel hanya menjalankan Eve, Vercel Workflow, dan jadw
 
 ## Jadwal redaksi
 
-`agent/schedules/edisi-pagi.md` memakai cron berikut:
+`agent/schedules/edisi-pagi.md` dan `agent/schedules/edisi-kemarin.md` memakai cron yang sama:
 
 ```text
 0 23 * * *
@@ -69,6 +71,7 @@ Kemudian jalankan:
 ```powershell
 npm run agent:info
 npm run agent:curate
+npm run agent:curate:kemarin
 ```
 
 Untuk penerbitan satu kali dari komputer pengelola tanpa menyimpan secret penerbitan ke cakram, `scripts/publish-once.ps1` membuat secret sementara, memasangnya pada Worker, dan meneruskan nilai yang sama hanya ke proses Eve. Perintah ini memerlukan login Wrangler dan merotasi `PUBLISH_SECRET` setiap kali dijalankan:
@@ -138,9 +141,13 @@ npm run worker:dry-run
 - `agent/agent.ts` — model, batas sesi, dan alat yang diizinkan.
 - `agent/instructions.md` — kebijakan kurasi, pemeriksaan fakta, dan susunan delapan berita.
 - `agent/skills/gaya-redaksi.md` — pedoman bahasa Indonesia formal gaya ruang redaksi lama.
-- `agent/schedules/edisi-pagi.md` — jadwal pukul 07.00 WITA/AWST.
+- `agent/schedules/edisi-pagi.md` — jadwal edisi hari ini pukul 07.00 WITA/AWST.
+- `agent/schedules/edisi-kemarin.md` — jadwal lembar Kemarin pada jam yang sama.
+- `migrations/0003_kemarin_editions.sql` — jenis lembar dan tanggal perakitan tanpa menimpa edisi lama.
 - `agent/channels/eve.ts` — kebijakan OIDC yang menutup kanal agen dari pemanggilan umum.
 - `agent/tools/publish_edition.ts` — kontrak penerbitan bertanda tangan.
+- `agent/tools/kemarin_publication_context.ts` — tanggal cetak historis dan jendela 35 tahun.
+- `agent/tools/collect_historical_candidates.ts` — buku calon dari arsip Wikipedia.
 - `src/index.ts` — router Worker, Siteverify, API, dan gerbang aset.
 - `migrations/0001_initial.sql` — skema dasar D1.
 - `migrations/0002_bilingual_editions.sql` — tabel naskah Tionghoa yang menjaga edisi lama tetap utuh.

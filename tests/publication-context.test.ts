@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildEditorialWindow,
+  buildKemarinPublicationContext,
   buildPublicationContext,
   EDITORIAL_WINDOW_HOURS,
   EDITORIAL_WINDOW_MS,
+  shiftPerthInstantByYears,
 } from "../agent/lib/publication-context";
+import { historicalDateFromPublication, KEMARIN_OFFSET_YEARS } from "../shared/calendar";
 
 describe("buildPublicationContext", () => {
   it("uses the Perth calendar day at the 07.00 publication boundary", () => {
@@ -41,5 +44,28 @@ describe("buildPublicationContext", () => {
       searchWindowStart: context.searchWindowStart,
       searchWindowEnd: context.searchWindowEnd,
     });
+  });
+});
+
+describe("buildKemarinPublicationContext", () => {
+  it("prints today minus 35 years and keeps today's issue number", () => {
+    const now = new Date("2026-08-08T23:00:00.000Z");
+    const context = buildKemarinPublicationContext(now);
+    expect(context.kind).toBe("kemarin");
+    expect(context.publicationDate).toBe("2026-08-09");
+    expect(context.editionDate).toBe("1991-08-09");
+    expect(context.issueNumber).toBe(1);
+    expect(context.offsetYears).toBe(KEMARIN_OFFSET_YEARS);
+    expect(Date.parse(context.searchWindowEnd) - Date.parse(context.searchWindowStart)).toBe(
+      EDITORIAL_WINDOW_MS,
+    );
+    expect(context.searchWindowEnd).toBe(shiftPerthInstantByYears(now, 35).toISOString());
+  });
+
+  it("clamps 29 February onto the last day of February 35 years earlier", () => {
+    expect(historicalDateFromPublication("2028-02-29")).toBe("1993-02-28");
+    const context = buildKemarinPublicationContext(new Date("2028-02-28T23:00:00.000Z"));
+    expect(context.publicationDate).toBe("2028-02-29");
+    expect(context.editionDate).toBe("1993-02-28");
   });
 });

@@ -124,7 +124,8 @@ a {
 .masthead,
 main,
 .colophon,
-.demo-notice {
+.demo-notice,
+.kemarin-notice {
   position: relative;
   z-index: 2;
 }
@@ -138,7 +139,8 @@ main,
 .world-wire__header p,
 .colophon strong,
 .loading-ledger p,
-.demo-notice {
+.demo-notice,
+.kemarin-notice {
   font-family: "Roboto Condensed JM", "Arial Narrow", sans-serif;
   font-weight: 760;
   text-transform: uppercase;
@@ -162,6 +164,7 @@ main,
   align-items: center;
 }
 
+.edition-switch,
 .language-switch {
   display: inline-flex;
   gap: 7px;
@@ -180,15 +183,22 @@ main,
   cursor: pointer;
 }
 
+.edition-switch:hover,
+.edition-switch[aria-current="page"],
 .language-switch:hover:not(:disabled),
 .language-switch[aria-pressed="true"] {
   color: var(--paper-bright);
   background: var(--ink);
 }
 
+.edition-switch:focus-visible,
 .language-switch:focus-visible {
   outline: 3px solid var(--ink);
   outline-offset: 3px;
+}
+
+.edition-switch {
+  text-decoration: none;
 }
 
 .language-switch:disabled {
@@ -317,13 +327,21 @@ main,
   border-right: 0;
 }
 
-.demo-notice {
+.demo-notice,
+.kemarin-notice {
   margin-top: 12px;
   padding: 9px 12px 7px;
   color: var(--paper-bright);
   background: var(--ink);
   font-size: 13px;
   text-align: center;
+}
+
+.kemarin-notice {
+  letter-spacing: 0.14em;
+  box-shadow: inset 0 0 0 2px var(--paper);
+  outline: 1px solid var(--ink);
+  outline-offset: -4px;
 }
 
 .edition-intro {
@@ -885,7 +903,9 @@ html[lang="zh-Hans"] .story-section,
 html[lang="zh-Hans"] .world-wire__header p,
 html[lang="zh-Hans"] .colophon strong,
 html[lang="zh-Hans"] .loading-ledger p,
+html[lang="zh-Hans"] .kemarin-notice,
 html[lang="zh-Hans"] .demo-notice,
+html[lang="zh-Hans"] .edition-switch,
 html[lang="zh-Hans"] .language-switch {
   font-family: "Heiti SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   letter-spacing: 0.08em;
@@ -1014,6 +1034,7 @@ html[lang="zh-Hans"] .colophon p {
     gap: 0;
   }
 
+  .edition-switch,
   .language-switch {
     min-height: 24px;
     margin-right: 0;

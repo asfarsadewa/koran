@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { editionInputSchema, editionPublishSchema, isLikelyDirectArticleUrl } from "../shared/edition";
-import { validEditionPublish } from "./fixtures";
+import {
+  editionInputSchema,
+  editionPublishSchema,
+  isLikelyDirectArticleUrl,
+  isLikelyHistoricalSourceUrl,
+  parseIsoDate,
+} from "../shared/edition";
+import { validEditionPublish, validKemarinPublish } from "./fixtures";
 
 function validEdition() {
   return editionInputSchema.parse(validEditionPublish());
@@ -78,6 +84,33 @@ describe("editionInputSchema", () => {
   });
 });
 
+describe("kemarin editionInputSchema", () => {
+  it("accepts a dated historical sheet with encyclopedia sources", () => {
+    expect(editionInputSchema.safeParse(validKemarinPublish()).success).toBe(true);
+  });
+
+  it("rejects a Kemarin sheet without a Perth publication date", () => {
+    const { publicationDate: _ignored, ...withoutPublicationDate } = validKemarinPublish();
+    expect(editionInputSchema.safeParse(withoutPublicationDate).success).toBe(false);
+  });
+
+  it("rejects a Kemarin sheet whose printed date is not publication day minus 35 years", () => {
+    const parsed = editionInputSchema.safeParse({
+      ...validKemarinPublish(),
+      editionDate: "1990-08-09",
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects today's edition when the publication date does not match the printed date", () => {
+    const parsed = editionInputSchema.safeParse({
+      ...validEditionPublish(),
+      publicationDate: "2026-08-10",
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+
 describe("isLikelyDirectArticleUrl", () => {
   it.each([
     "https://example.com/world/report-on-major-crisis",
@@ -95,5 +128,31 @@ describe("isLikelyDirectArticleUrl", () => {
     "https://example.com/world/short",
   ])("rejects non-article form %s", (url) => {
     expect(isLikelyDirectArticleUrl(url)).toBe(false);
+  });
+});
+
+describe("isLikelyHistoricalSourceUrl", () => {
+  it.each([
+    "https://en.wikipedia.org/wiki/Gulf_War",
+    "https://en.wikipedia.org/wiki/1991_Soviet_coup_d%27%C3%A9tat_attempt",
+    "https://www.britannica.com/topic/Soviet-Coup-of-1991",
+    "https://www.nytimes.com/1991/08/19/world/report-on-moscow-coup.html",
+    "https://web.archive.org/web/19910819120000/https://www.nytimes.com/1991/08/19/world/moscow-coup-report.html",
+  ])("accepts historical source %s", (url) => {
+    expect(isLikelyHistoricalSourceUrl(url)).toBe(true);
+  });
+
+  it.each([
+    "https://en.wikipedia.org/wiki/Special:Search",
+    "https://en.wikipedia.org/wiki/Main_Page",
+    "https://www.britannica.com/",
+    "http://en.wikipedia.org/wiki/Gulf_War",
+  ])("rejects non-source %s", (url) => {
+    expect(isLikelyHistoricalSourceUrl(url)).toBe(false);
+  });
+
+  it("rejects calendar dates that do not exist", () => {
+    expect(parseIsoDate("2026-02-31")).toBeNull();
+    expect(parseIsoDate("not-a-date")).toBeNull();
   });
 });

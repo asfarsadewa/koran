@@ -1,8 +1,14 @@
-import { editionPublishSchema } from "../shared/edition";
+import {
+  DEFAULT_EDITION_KIND,
+  editionPublishSchema,
+  ISO_DATE_PATTERN,
+  isEditionKind,
+  type EditionKind,
+} from "../shared/edition";
 import { publishEdition, readArticleImageUrl, readEdition } from "./database";
 import { gateResponse } from "./gate";
 import { createAccessCookie, hasValidAccessCookie, verifyPublishSignature } from "./security";
-import { SOCIAL_IMAGE_PATH } from "./social";
+import { isKemarinPath, SOCIAL_IMAGE_PATH } from "./social";
 
 const MAX_JSON_BYTES = 128 * 1_024;
 const MAX_ARTICLE_IMAGE_BYTES = 8 * 1_024 * 1_024;
@@ -235,11 +241,18 @@ async function articleImageResponse(request: Request, env: Env, url: URL): Promi
   const editionDate = url.searchParams.get("edisi") ?? "";
   const rankText = url.searchParams.get("berita") ?? "";
   const articleRank = Number(rankText);
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(editionDate) || !Number.isInteger(articleRank) || articleRank < 1 || articleRank > 8) {
+  const kind = parseEditionKind(url.searchParams.get("jenis"));
+  if (
+    !kind ||
+    !ISO_DATE_PATTERN.test(editionDate) ||
+    !Number.isInteger(articleRank) ||
+    articleRank < 1 ||
+    articleRank > 8
+  ) {
     return json({ ok: false, error: "Rujukan gambar berita tidak sah." }, 400);
   }
 
-  const imageUrl = await readArticleImageUrl(env.DB, editionDate, articleRank);
+  const imageUrl = await readArticleImageUrl(env.DB, editionDate, articleRank, kind);
   if (!imageUrl) return json({ ok: false, error: "Gambar berita tidak tersedia." }, 404);
   try {
     const parsedImageUrl = new URL(imageUrl);
@@ -301,10 +314,14 @@ export default {
         return json({ ok: false, error: "Pemeriksaan pembaca diperlukan." }, 401);
       }
       const editionDate = url.searchParams.get("edisi") ?? undefined;
-      if (editionDate && !/^\d{4}-\d{2}-\d{2}$/u.test(editionDate)) {
+      const kind = parseEditionKind(url.searchParams.get("jenis"));
+      if (!kind) {
+        return json({ ok: false, error: "Jenis lembar tidak sah." }, 400);
+      }
+      if (editionDate && !ISO_DATE_PATTERN.test(editionDate)) {
         return json({ ok: false, error: "Tanggal edisi tidak sah." }, 400);
       }
-      const edition = await readEdition(env.DB, editionDate);
+      const edition = await readEdition(env.DB, editionDate, kind);
       return edition
         ? json({ ok: true, edition })
         : json(
@@ -312,7 +329,9 @@ export default {
               ok: false,
               error: editionDate
                 ? "Edisi yang diminta tidak ditemukan."
-                : "Edisi pertama sedang dihimpun.",
+                : kind === "kemarin"
+                  ? "Lembar Kemarin sedang dihimpun."
+                  : "Edisi pertama sedang dihimpun.",
             },
             404,
           );
@@ -336,9 +355,20 @@ export default {
     }
 
     if (!(await hasAccess(request, env))) {
-      return gateResponse(env.TURNSTILE_SITE_KEY);
+      return gateResponse(env.TURNSTILE_SITE_KEY, url.pathname);
+    }
+
+    if (isKemarinPath(url.pathname)) {
+      const assetUrl = new URL(request.url);
+      assetUrl.pathname = "/index.html";
+      return hardenAssetResponse(await env.ASSETS.fetch(new Request(assetUrl, request)));
     }
 
     return hardenAssetResponse(await env.ASSETS.fetch(request));
   },
 } satisfies ExportedHandler<Env>;
+
+function parseEditionKind(value: string | null): EditionKind | null {
+  if (value === null || value === "") return DEFAULT_EDITION_KIND;
+  return isEditionKind(value) ? value : null;
+}

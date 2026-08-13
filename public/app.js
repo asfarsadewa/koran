@@ -7,6 +7,7 @@ import {
   mixLanguageText,
 } from "./language.js";
 import {
+  KEMARIN_SHEET,
   buildStoryShareData,
   renderStoryClipping,
   storyShareFileName,
@@ -15,6 +16,7 @@ import {
 const staticCopy = {
   "skip-link": { id: "Langsung ke berita utama", zhHans: "直接阅览头版新闻" },
   "top-purpose": { id: "HARIAN IKHTISAR DUNIA", zhHans: "世界新闻摘要日报" },
+  "edition-switch": { id: "KEMARIN", zhHans: "昨日" },
   "top-place": { id: "SEMARANG • JAWA TENGAH", zhHans: "三宝垄 • 中爪哇" },
   "top-schedule": { id: "TERBIT PUKUL 07.00 WITA", zhHans: "每日西澳中部标准时间七时出版" },
   "number-label": { id: "NOMOR", zhHans: "期号" },
@@ -41,6 +43,10 @@ const staticCopy = {
     zhHans: "样刊——下列文字仅供检验版面之用",
   },
   "intro-label": { id: "POKOK BERITA HARI INI", zhHans: "今日要闻" },
+  "kemarin-notice": {
+    id: "LEMBAR KEMARIN — HARI YANG SAMA, TIGA PULUH LIMA TAHUN YANG LALU",
+    zhHans: "昨日专页——三十五年前之同日",
+  },
   "loading-copy": { id: "LEMBAR BERITA SEDANG DIBUKA…", zhHans: "报纸正在展开……" },
   "wire-title": { id: "KAWAT DUNIA", zhHans: "国际电讯" },
   "wire-subtitle": { id: "Laporan singkat dari berbagai tempat", zhHans: "各地简讯" },
@@ -111,6 +117,7 @@ const shareCopy = {
 };
 
 const pageParameters = new URLSearchParams(window.location.search);
+const isKemarinSheet = window.location.pathname.replace(/\/+$/u, "") === "/kemarin";
 const requestedEditionDate = pageParameters.get("edisi");
 const requestedLocale =
   pageParameters.get("bahasa") === CHINESE_LOCALE ? CHINESE_LOCALE : INDONESIAN_LOCALE;
@@ -132,7 +139,9 @@ const elements = {
   curatorLine: document.querySelector("#curator-line"),
   mastheadDek: document.querySelector("#masthead-dek"),
   demoNotice: document.querySelector("#demo-notice"),
+  kemarinNotice: document.querySelector("#kemarin-notice"),
   editorialStamp: document.querySelector(".editorial-stamp"),
+  editionSwitch: document.querySelector("#edition-switch"),
   languageSwitch: document.querySelector("#language-switch"),
   languageCurrent: document.querySelector("#language-current"),
   languageTarget: document.querySelector("#language-target"),
@@ -140,7 +149,7 @@ const elements = {
 };
 
 let currentEdition = null;
-let currentLocale = INDONESIAN_LOCALE;
+let currentLocale = requestedLocale;
 let languageIsChanging = false;
 let shareStatusTimer = 0;
 let requestedStoryRevealed = false;
@@ -297,6 +306,7 @@ function prepareStoryClipping(article, locale) {
     editionDate: edition.editionDate,
     issueNumber: edition.issueNumber,
     locale,
+    sheet: currentSheet(),
   })
     .then((clipping) => {
       clippingCache.set(key, clipping);
@@ -327,9 +337,11 @@ async function shareStory(article, locale, button) {
     const fileName = storyShareFileName(currentEdition.editionDate, article.rank);
     const shareData = buildStoryShareData(
       article.headline,
-      currentEdition.editionDate,
+      shareEditionDate(),
       article.rank,
       locale,
+      undefined,
+      currentSheet(),
     );
     const file =
       typeof File === "function" ? new File([clipping], fileName, { type: "image/png" }) : null;
@@ -397,12 +409,39 @@ function storyShareButton(article, locale) {
   return button;
 }
 
+function currentSheet() {
+  return currentEdition?.kind === KEMARIN_SHEET || isKemarinSheet ? KEMARIN_SHEET : "hari_ini";
+}
+
+function shareEditionDate() {
+  return currentEdition?.publicationDate ?? currentEdition?.editionDate ?? "";
+}
+
 function clippingImageUrl(article) {
   if (!article.imageUrl || !currentEdition) return undefined;
   const url = new URL("/api/article-image", window.location.origin);
-  url.searchParams.set("edisi", currentEdition.editionDate);
+  url.searchParams.set("edisi", shareEditionDate());
   url.searchParams.set("berita", String(article.rank));
+  if (currentSheet() === KEMARIN_SHEET) url.searchParams.set("jenis", KEMARIN_SHEET);
   return url.href;
+}
+
+function updateEditionSwitch() {
+  const counterpart = new URL(isKemarinSheet ? "/" : "/kemarin", window.location.origin);
+  if (requestedEditionDate) counterpart.searchParams.set("edisi", requestedEditionDate);
+  if (currentLocale === CHINESE_LOCALE) counterpart.searchParams.set("bahasa", CHINESE_LOCALE);
+  elements.editionSwitch.href = `${counterpart.pathname}${counterpart.search}`;
+  elements.editionSwitch.setAttribute("aria-current", isKemarinSheet ? "page" : "false");
+  const label =
+    currentLocale === CHINESE_LOCALE
+      ? isKemarinSheet
+        ? "阅读今日专页"
+        : "阅读昨日专页"
+      : isKemarinSheet
+        ? "Buka lembar hari ini"
+        : "Buka lembar Kemarin";
+  elements.editionSwitch.setAttribute("aria-label", label);
+  elements.editionSwitch.title = label;
 }
 
 function renderLead(article, locale) {
@@ -478,6 +517,34 @@ function buildCopyMap(edition, locale) {
       : edition.mastheadDek,
   );
 
+  if (edition.kind === KEMARIN_SHEET || isKemarinSheet) {
+    copy.set(
+      "top-purpose",
+      locale === CHINESE_LOCALE ? "昨日专页" : "LEMBAR KEMARIN",
+    );
+    copy.set(
+      "intro-label",
+      locale === CHINESE_LOCALE ? "昨日要闻" : "POKOK BERITA KEMARIN",
+    );
+    copy.set("edition-switch", locale === CHINESE_LOCALE ? "今日" : "HARI INI");
+    copy.set(
+      "empty-title",
+      locale === CHINESE_LOCALE ? "昨日专页仍在汇编之中。" : "Lembar Kemarin masih dihimpun.",
+    );
+    copy.set(
+      "empty-copy",
+      locale === CHINESE_LOCALE
+        ? "编辑机器尚未交付昨日专页。请于西澳中部标准时间七时以后再行阅览。"
+        : "Mesin redaksi belum menyerahkan lembar Kemarin. Silakan datang kembali setelah pukul 07.00 WITA.",
+    );
+    copy.set(
+      "about-copy",
+      locale === CHINESE_LOCALE
+        ? "本页所载为三十五年前同日之人道灾祸摘要，依据当时记载与后来可核验之档案写成。摘要不能代替原始记载；请打开各则新闻查阅出处。"
+        : "Lembar ini memuat ikhtisar malapetaka kemanusiaan pada hari yang sama tiga puluh lima tahun lalu, disusun dari catatan sezaman dan arsip yang dapat diperiksa. Ringkasan tidak menggantikan catatan asli; buka setiap berita untuk membaca sumbernya.",
+    );
+  }
+
   for (const original of edition.articles) {
     const article = translatedArticle(edition, original, locale);
     copy.set(
@@ -535,6 +602,8 @@ function renderEdition(edition, locale = currentLocale) {
   elements.issueNumber.textContent = String(edition.issueNumber).padStart(4, "0");
   elements.editionDate.dateTime = edition.editionDate;
   elements.demoNotice.hidden = !edition.isDemo;
+  elements.kemarinNotice.hidden = edition.kind !== KEMARIN_SHEET && !isKemarinSheet;
+  document.documentElement.classList.toggle("is-kemarin", isKemarinSheet);
   document.title = `${localizedArticles[0].headline} — ${
     locale === CHINESE_LOCALE ? "自由冠军报" : "Juara Merdeka"
   }`;
@@ -564,6 +633,7 @@ function renderEdition(edition, locale = currentLocale) {
   );
   applyStaticCopy(copy);
   updateLanguageSwitch();
+  updateEditionSwitch();
 
   elements.loading.hidden = true;
   elements.empty.hidden = true;
@@ -640,11 +710,13 @@ function showEmpty(message) {
     paragraph.textContent = message;
   }
   updateLanguageSwitch();
+  updateEditionSwitch();
 }
 
 async function loadEdition() {
   try {
     const editionEndpoint = new URL("/api/edition", window.location.origin);
+    if (isKemarinSheet) editionEndpoint.searchParams.set("jenis", KEMARIN_SHEET);
     if (requestedEditionDate) editionEndpoint.searchParams.set("edisi", requestedEditionDate);
     const response = await fetch(editionEndpoint, {
       headers: { accept: "application/json" },
@@ -669,5 +741,32 @@ elements.languageSwitch.addEventListener("click", () => {
   );
 });
 
+document.documentElement.classList.toggle("is-kemarin", isKemarinSheet);
+elements.kemarinNotice.hidden = !isKemarinSheet;
+if (isKemarinSheet) {
+  applyStaticCopy(
+    new Map([
+      ["top-purpose", requestedLocale === CHINESE_LOCALE ? "昨日专页" : "LEMBAR KEMARIN"],
+      [
+        "intro-label",
+        requestedLocale === CHINESE_LOCALE ? "昨日要闻" : "POKOK BERITA KEMARIN",
+      ],
+      ["edition-switch", requestedLocale === CHINESE_LOCALE ? "今日" : "HARI INI"],
+      [
+        "empty-title",
+        requestedLocale === CHINESE_LOCALE
+          ? "昨日专页仍在汇编之中。"
+          : "Lembar Kemarin masih dihimpun.",
+      ],
+      [
+        "empty-copy",
+        requestedLocale === CHINESE_LOCALE
+          ? "编辑机器尚未交付昨日专页。请于西澳中部标准时间七时以后再行阅览。"
+          : "Mesin redaksi belum menyerahkan lembar Kemarin. Silakan datang kembali setelah pukul 07.00 WITA.",
+      ],
+    ]),
+  );
+}
 updateLanguageSwitch();
+updateEditionSwitch();
 loadEdition();

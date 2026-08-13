@@ -1,4 +1,8 @@
 import {
+  isKemarinPath,
+  KEMARIN_SITE_URL,
+  KEMARIN_SOCIAL_DESCRIPTION,
+  KEMARIN_SOCIAL_TITLE,
   SITE_URL,
   SOCIAL_DESCRIPTION,
   SOCIAL_IMAGE_ALT,
@@ -19,7 +23,11 @@ function escapeHtml(value: string): string {
   });
 }
 
-export function gateResponse(siteKey: string): Response {
+export function gateResponse(siteKey: string, pathname = "/"): Response {
+  const kemarin = isKemarinPath(pathname);
+  const pageUrl = kemarin ? KEMARIN_SITE_URL : SITE_URL;
+  const pageTitle = kemarin ? KEMARIN_SOCIAL_TITLE : SOCIAL_TITLE;
+  const pageDescription = kemarin ? KEMARIN_SOCIAL_DESCRIPTION : SOCIAL_DESCRIPTION;
   const nonce = crypto.randomUUID().replaceAll("-", "");
   const safeSiteKey = escapeHtml(siteKey);
   const html = `<!doctype html>
@@ -28,14 +36,14 @@ export function gateResponse(siteKey: string): Response {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="index,follow,max-image-preview:large">
-  <meta name="description" content="${escapeHtml(SOCIAL_DESCRIPTION)}">
+  <meta name="description" content="${escapeHtml(pageDescription)}">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="id_ID">
   <meta property="og:locale:alternate" content="zh_CN">
   <meta property="og:site_name" content="Juara Merdeka">
-  <meta property="og:url" content="${SITE_URL}">
-  <meta property="og:title" content="${escapeHtml(SOCIAL_TITLE)}">
-  <meta property="og:description" content="${escapeHtml(SOCIAL_DESCRIPTION)}">
+  <meta property="og:url" content="${pageUrl}">
+  <meta property="og:title" content="${escapeHtml(pageTitle)}">
+  <meta property="og:description" content="${escapeHtml(pageDescription)}">
   <meta property="og:image" content="${SOCIAL_IMAGE_URL}">
   <meta property="og:image:secure_url" content="${SOCIAL_IMAGE_URL}">
   <meta property="og:image:type" content="image/png">
@@ -43,12 +51,12 @@ export function gateResponse(siteKey: string): Response {
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="${escapeHtml(SOCIAL_IMAGE_ALT)}">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="${escapeHtml(SOCIAL_TITLE)}">
-  <meta name="twitter:description" content="${escapeHtml(SOCIAL_DESCRIPTION)}">
+  <meta name="twitter:title" content="${escapeHtml(pageTitle)}">
+  <meta name="twitter:description" content="${escapeHtml(pageDescription)}">
   <meta name="twitter:image" content="${SOCIAL_IMAGE_URL}">
   <meta name="twitter:image:alt" content="${escapeHtml(SOCIAL_IMAGE_ALT)}">
-  <link rel="canonical" href="${SITE_URL}">
-  <title>${escapeHtml(SOCIAL_TITLE)}</title>
+  <link rel="canonical" href="${pageUrl}">
+  <title>${escapeHtml(pageTitle)}</title>
   <style nonce="${nonce}">
     :root { color-scheme: light; --paper:#e8e7df; --ink:#11110f; --fade:#696862; }
     * { box-sizing:border-box; }
@@ -67,10 +75,14 @@ export function gateResponse(siteKey: string): Response {
 </head>
 <body>
   <main>
-    <p class="kicker">SURAT KABAR PAGI • JAWA TENGAH</p>
+    <p class="kicker">${kemarin ? "LEMBAR KEMARIN • JAWA TENGAH" : "SURAT KABAR PAGI • JAWA TENGAH"}</p>
     <h1>Juara<br>Merdeka</h1>
     <h2>Pemeriksaan Pembaca</h2>
-    <p>Sebelum lembar berita dibuka, harap selesaikan pemeriksaan singkat berikut. Langkah ini melindungi penerbitan dari pembacaan otomatis yang berlebihan.</p>
+    <p>${
+      kemarin
+        ? "Sebelum lembar Kemarin dibuka, harap selesaikan pemeriksaan singkat berikut. Langkah ini melindungi penerbitan dari pembacaan otomatis yang berlebihan."
+        : "Sebelum lembar berita dibuka, harap selesaikan pemeriksaan singkat berikut. Langkah ini melindungi penerbitan dari pembacaan otomatis yang berlebihan."
+    }</p>
     <div id="turnstile-host" data-action="turnstile-spin-v1"></div>
     <p id="status" role="status" aria-live="polite">Menyiapkan pemeriksaan…</p>
     <div class="rule">DIHIMPUN MESIN REDAKSI • TERBIT PUKUL 07.00 WITA</div>

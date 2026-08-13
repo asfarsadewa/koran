@@ -17,6 +17,7 @@
     "agent:info": "eve info",
     "agent:build": "eve build",
     "agent:curate": "eve invoke \"Susun dan terbitkan edisi harian Juara Merdeka sekarang sesuai tata kerja redaksi.\"",
+    "agent:curate:kemarin": "eve invoke \"Susun dan terbitkan lembar Kemarin Juara Merdeka sekarang sesuai tata kerja redaksi historis.\"",
     "worker:dry-run": "wrangler deploy --dry-run",
     "build": "npm run typecheck && npm run test:coverage && npm run agent:info && npm run agent:build && npm run worker:dry-run",
     "deploy:worker": "wrangler deploy",

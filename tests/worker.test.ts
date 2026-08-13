@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import worker from "../src/index";
 import { createAccessCookie } from "../src/security";
-import { SOCIAL_IMAGE_PATH } from "../src/social";
-import { validEditionPublish } from "./fixtures";
+import { KEMARIN_PATH, SOCIAL_IMAGE_PATH } from "../src/social";
+import { validEditionPublish, validKemarinPublish } from "./fixtures";
 
 interface TestEnvOptions {
   assetsResponse?: Response;
@@ -177,6 +177,36 @@ describe("Worker public and protected routes", () => {
     expect(assetsFetch).toHaveBeenCalledOnce();
   });
 
+  it("rewrites /kemarin to the newspaper shell after access", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-09T00:00:00.000Z"));
+    const setCookie = await createAccessCookie("session-secret-test", 600);
+    const { env, assetsFetch } = createEnv({
+      assetsResponse: new Response("<!doctype html><title>Juara Merdeka</title>", {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      }),
+    });
+    const response = await worker.fetch(
+      requestWithCookie("https://koran.r3ptil.com/kemarin", setCookie),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    const forwarded = assetsFetch.mock.calls[0]?.[0] as Request;
+    expect(new URL(forwarded.url).pathname).toBe("/index.html");
+  });
+
+  it("shows Kemarin social metadata on the ungated /kemarin document", async () => {
+    const { env, assetsFetch } = createEnv({ overrides: { SESSION_SECRET: "" } });
+    const response = await worker.fetch(new Request("https://koran.r3ptil.com/kemarin"), env);
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(html).toContain("Lembar Kemarin");
+    expect(html).toContain(`https://koran.r3ptil.com${KEMARIN_PATH}`);
+    expect(assetsFetch).not.toHaveBeenCalled();
+  });
+
   it("rejects unsupported methods before the asset binding", async () => {
     const { env, assetsFetch } = createEnv();
     const response = await worker.fetch(
@@ -223,6 +253,13 @@ describe("Worker public and protected routes", () => {
     expect(archived.status).toBe(200);
     expect(malformed.status).toBe(400);
     await expect(malformed.json()).resolves.toMatchObject({ error: "Tanggal edisi tidak sah." });
+
+    const badKind = await worker.fetch(
+      requestWithCookie("https://koran.r3ptil.com/api/edition?jenis=lusa", setCookie),
+      env,
+    );
+    expect(badKind.status).toBe(400);
+    await expect(badKind.json()).resolves.toMatchObject({ error: "Jenis lembar tidak sah." });
   });
 
   it("proxies only the stored article image for an authorized clipping", async () => {
@@ -367,6 +404,38 @@ describe("Worker publication boundary", () => {
     });
     expect(fake.getBatchSize()).toBe(19);
     expect(fake.calls).toHaveLength(19);
+  });
+
+  it("accepts a signed Kemarin sheet and stores it separately from today's edition", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-09T02:03:04.000Z"));
+    const fake = publishDatabase();
+    const { env } = createEnv({ database: fake.database });
+    const body = JSON.stringify(validKemarinPublish());
+    const timestamp = String(Date.now());
+    const signature = createHmac("sha256", "publish-secret-test")
+      .update(`${timestamp}.${body}`)
+      .digest("base64url");
+    const response = await worker.fetch(
+      new Request("https://koran.r3ptil.com/api/editions", {
+        method: "POST",
+        headers: {
+          "x-juara-timestamp": timestamp,
+          "x-juara-signature": signature,
+        },
+        body,
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      editionId: "kemarin-2026-08-09",
+      articleCount: 8,
+    });
+    expect(fake.calls[0]?.args[0]).toBe("kemarin-2026-08-09");
+    expect(fake.calls[0]?.args[1]).toBe("kemarin");
   });
 
   it("rejects a newly published edition without the complete Chinese version", async () => {

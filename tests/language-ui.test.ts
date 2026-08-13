@@ -50,6 +50,7 @@ describe("newspaper language transformation", () => {
       readFile(resolve(root, "public/styles.css"), "utf8"),
     ]);
 
+    expect(html).toContain('id="edition-switch"');
     expect(html).toContain('id="language-switch"');
     expect(html).toContain('aria-pressed="false"');
     expect(html).toContain('data-copy-id="masthead-name"');

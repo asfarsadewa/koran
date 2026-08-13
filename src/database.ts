@@ -1,8 +1,18 @@
-import type { EditionPublishInput, PublishedEdition } from "../shared/edition";
+import {
+  DEFAULT_EDITION_KIND,
+  editionIdFor,
+  isEditionKind,
+  resolvedPublicationDate,
+  type EditionKind,
+  type EditionPublishInput,
+  type PublishedEdition,
+} from "../shared/edition";
 
 interface EditionRow {
   id: string;
+  kind: string | null;
   edition_date: string;
+  publication_date: string | null;
   issue_number: number;
   masthead_dek: string;
   published_at: string;
@@ -48,19 +58,22 @@ function hasChineseTranslation(article: ArticleRow): article is TranslatedArticl
 export async function readEdition(
   database: D1Database,
   editionDate?: string,
+  kind: EditionKind = DEFAULT_EDITION_KIND,
 ): Promise<PublishedEdition | null> {
   const editionQuery = database.prepare(
-    `SELECT e.id, e.edition_date, e.issue_number, e.masthead_dek, e.published_at,
-            e.curator_model, e.is_demo, et.masthead_dek AS masthead_dek_zh
+    `SELECT e.id, e.kind, e.edition_date, e.publication_date, e.issue_number, e.masthead_dek,
+            e.published_at, e.curator_model, e.is_demo, et.masthead_dek AS masthead_dek_zh
      FROM editions e
      LEFT JOIN edition_translations et
        ON et.edition_id = e.id AND et.locale = 'zh-Hans'
-     ${editionDate ? "WHERE e.edition_date = ?" : "ORDER BY e.edition_date DESC"}
+     WHERE e.kind = ?
+     ${editionDate ? "AND e.publication_date = ?" : ""}
+     ORDER BY e.publication_date DESC
      LIMIT 1`,
   );
   const edition = editionDate
-    ? await editionQuery.bind(editionDate).first<EditionRow>()
-    : await editionQuery.first<EditionRow>();
+    ? await editionQuery.bind(kind, editionDate).first<EditionRow>()
+    : await editionQuery.bind(kind).first<EditionRow>();
 
   if (!edition) return null;
 
@@ -112,9 +125,13 @@ export async function readEdition(
         }
       : undefined;
 
+  const editionKind = isEditionKind(edition.kind) ? edition.kind : DEFAULT_EDITION_KIND;
+
   return {
     id: edition.id,
+    kind: editionKind,
     editionDate: edition.edition_date,
+    publicationDate: edition.publication_date ?? edition.edition_date,
     issueNumber: edition.issue_number,
     mastheadDek: edition.masthead_dek,
     publishedAt: edition.published_at,
@@ -133,15 +150,17 @@ export async function readArticleImageUrl(
   database: D1Database,
   editionDate: string,
   articleRank: number,
+  kind: EditionKind = DEFAULT_EDITION_KIND,
 ): Promise<string | null> {
   const row = await database
     .prepare(
-      `SELECT image_url
-       FROM articles
-       WHERE edition_id = ? AND rank = ?
+      `SELECT a.image_url
+       FROM articles a
+       INNER JOIN editions e ON e.id = a.edition_id
+       WHERE e.kind = ? AND e.publication_date = ? AND a.rank = ?
        LIMIT 1`,
     )
-    .bind(editionDate, articleRank)
+    .bind(kind, editionDate, articleRank)
     .first<{ image_url: string | null }>();
   return row?.image_url ?? null;
 }
@@ -150,15 +169,21 @@ export async function publishEdition(
   database: D1Database,
   edition: EditionPublishInput,
 ): Promise<{ editionId: string; articleCount: number }> {
-  const editionId = edition.editionDate;
+  const kind = edition.kind ?? DEFAULT_EDITION_KIND;
+  const publicationDate = resolvedPublicationDate(kind, edition.editionDate, edition.publicationDate);
+  const editionId = editionIdFor(kind, publicationDate);
   const publishedAt = new Date().toISOString();
   const statements: D1PreparedStatement[] = [
     database
       .prepare(
         `INSERT INTO editions
-           (id, edition_date, issue_number, masthead_dek, published_at, curator_model, is_demo)
-         VALUES (?, ?, ?, ?, ?, ?, 0)
+           (id, kind, edition_date, publication_date, issue_number, masthead_dek,
+            published_at, curator_model, is_demo)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
          ON CONFLICT(id) DO UPDATE SET
+           kind = excluded.kind,
+           edition_date = excluded.edition_date,
+           publication_date = excluded.publication_date,
            issue_number = excluded.issue_number,
            masthead_dek = excluded.masthead_dek,
            published_at = excluded.published_at,
@@ -167,7 +192,9 @@ export async function publishEdition(
       )
       .bind(
         editionId,
+        kind,
         edition.editionDate,
+        publicationDate,
         edition.issueNumber,
         edition.mastheadDek,
         publishedAt,

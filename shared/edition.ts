@@ -1,5 +1,28 @@
 import { z } from "zod";
 
+import {
+  DEFAULT_EDITION_KIND,
+  EDITION_KINDS,
+  historicalDateFromPublication,
+  ISO_DATE_PATTERN,
+  type EditionKind,
+} from "./calendar";
+
+export {
+  DEFAULT_EDITION_KIND,
+  EDITION_KINDS,
+  editionIdFor,
+  formatIsoDate,
+  historicalDateFromPublication,
+  ISO_DATE_PATTERN,
+  isEditionKind,
+  KEMARIN_OFFSET_YEARS,
+  parseIsoDate,
+  resolvedPublicationDate,
+  subtractCalendarYears,
+  type EditionKind,
+} from "./calendar";
+
 export const SECTION_KEYS = [
   "conflict",
   "disaster",
@@ -33,10 +56,43 @@ export function isLikelyDirectArticleUrl(value: string): boolean {
   }
 }
 
-const directArticleUrl = httpsUrl.refine(
-  isLikelyDirectArticleUrl,
-  "Source URL must point to a direct article, not a home, topic, or section page",
-);
+const WIKIPEDIA_HOST = /(?:^|\.)wikipedia\.org$/iu;
+const WIKIPEDIA_FORBIDDEN_TITLE =
+  /^(?:Special:|Wikipedia:|File:|Help:|Template:|Talk:|Portal:|Category:|User:|Draft:|Main_Page$)/iu;
+
+export function isLikelyHistoricalSourceUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.replace(/^www\./u, "");
+    const segments = url.pathname.split("/").filter(Boolean);
+
+    if (WIKIPEDIA_HOST.test(host)) {
+      if (segments[0] !== "wiki" || segments.length < 2) return false;
+      const title = decodeURIComponent(segments[1] ?? "");
+      return title.length >= 3 && !WIKIPEDIA_FORBIDDEN_TITLE.test(title) && !/^\d{4}$/u.test(title);
+    }
+
+    if (isLikelyDirectArticleUrl(value)) return true;
+
+    if (host.endsWith("britannica.com")) {
+      return segments.length >= 2 && segments[0] === "topic";
+    }
+
+    if (host === "web.archive.org") {
+      const archived = url.pathname.match(/\/https?:\/(.+)$/u)?.[1];
+      return Boolean(archived && isLikelyHistoricalSourceUrl(`https://${archived}`));
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function sourceUrlAllowed(kind: EditionKind, value: string): boolean {
+  return kind === "kemarin" ? isLikelyHistoricalSourceUrl(value) : isLikelyDirectArticleUrl(value);
+}
 
 const chineseCopy = (minimum: number, maximum: number) =>
   z
@@ -53,7 +109,7 @@ export const articleSchema = z.object({
   dek: z.string().trim().min(70).max(420),
   dateline: z.string().trim().min(2).max(80),
   sourceName: z.string().trim().min(2).max(100),
-  sourceUrl: directArticleUrl,
+  sourceUrl: httpsUrl,
   sourcePublishedAt: z.string().trim().min(10).max(40),
   impact: z.string().trim().min(50).max(280),
   imageUrl: httpsUrl.optional(),
@@ -85,7 +141,9 @@ const chineseEditionSchema = z
 
 export const editionInputSchema = z
   .object({
-    editionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    kind: z.enum(EDITION_KINDS).default(DEFAULT_EDITION_KIND),
+    editionDate: z.string().regex(ISO_DATE_PATTERN),
+    publicationDate: z.string().regex(ISO_DATE_PATTERN).optional(),
     issueNumber: z.number().int().positive().max(999_999),
     mastheadDek: z.string().trim().min(40).max(260),
     articles: z.array(articleSchema).length(8),
@@ -111,6 +169,47 @@ export const editionInputSchema = z
         message: "Every article must point to a distinct source URL",
       });
     }
+
+    edition.articles.forEach((article, index) => {
+      if (!sourceUrlAllowed(edition.kind, article.sourceUrl)) {
+        context.addIssue({
+          code: "custom",
+          path: ["articles", index, "sourceUrl"],
+          message:
+            edition.kind === "kemarin"
+              ? "Source URL must point to a direct article or a dated encyclopedia/archive page"
+              : "Source URL must point to a direct article, not a home, topic, or section page",
+        });
+      }
+    });
+
+    if (edition.kind === "kemarin") {
+      if (!edition.publicationDate) {
+        context.addIssue({
+          code: "custom",
+          path: ["publicationDate"],
+          message: "Kemarin editions must include the Perth publication date",
+        });
+        return;
+      }
+      const expected = historicalDateFromPublication(edition.publicationDate);
+      if (edition.editionDate !== expected) {
+        context.addIssue({
+          code: "custom",
+          path: ["editionDate"],
+          message: `Kemarin edition date must be ${expected}`,
+        });
+      }
+      return;
+    }
+
+    if (edition.publicationDate && edition.publicationDate !== edition.editionDate) {
+      context.addIssue({
+        code: "custom",
+        path: ["publicationDate"],
+        message: "Today's edition date and publication date must match",
+      });
+    }
   });
 
 export const editionPublishSchema = editionInputSchema.and(
@@ -131,7 +230,9 @@ export interface PublishedArticle extends EditionArticleInput {
 
 export interface PublishedEdition {
   id: string;
+  kind: EditionKind;
   editionDate: string;
+  publicationDate: string;
   issueNumber: number;
   mastheadDek: string;
   publishedAt: string;

@@ -6,7 +6,7 @@ import {
   readEdition,
   readLatestEdition,
 } from "../src/database";
-import { validEditionPublish } from "./fixtures";
+import { validEditionPublish, validKemarinPublish } from "./fixtures";
 
 interface PreparedCall {
   sql: string;
@@ -67,7 +67,9 @@ describe("readLatestEdition", () => {
     const fake = fakeDatabase({
       edition: {
         id: "2026-08-09",
+        kind: "hari_ini",
         edition_date: "2026-08-09",
+        publication_date: "2026-08-09",
         issue_number: 1,
         masthead_dek: "Ikhtisar dunia pada hari ini.",
         published_at: "2026-08-09T01:00:00.000Z",
@@ -110,7 +112,9 @@ describe("readLatestEdition", () => {
     expect(fake.calls[1]?.args).toEqual(["2026-08-09"]);
     expect(edition).toMatchObject({
       id: "2026-08-09",
+      kind: "hari_ini",
       editionDate: "2026-08-09",
+      publicationDate: "2026-08-09",
       issueNumber: 1,
       curatorModel: "gpt-5.6-sol",
       isDemo: true,
@@ -129,7 +133,9 @@ describe("readLatestEdition", () => {
     const fake = fakeDatabase({
       edition: {
         id: "2026-08-10",
+        kind: "hari_ini",
         edition_date: "2026-08-10",
+        publication_date: "2026-08-10",
         issue_number: 2,
         masthead_dek: "Ikhtisar dunia pada hari ini.",
         published_at: "2026-08-10T01:00:00.000Z",
@@ -173,8 +179,15 @@ describe("readLatestEdition", () => {
 
     await expect(readEdition(fake.database, "2026-08-09")).resolves.toBeNull();
 
-    expect(fake.calls[0]?.sql).toContain("WHERE e.edition_date = ?");
-    expect(fake.calls[0]?.args).toEqual(["2026-08-09"]);
+    expect(fake.calls[0]?.sql).toContain("WHERE e.kind = ?");
+    expect(fake.calls[0]?.sql).toContain("AND e.publication_date = ?");
+    expect(fake.calls[0]?.args).toEqual(["hari_ini", "2026-08-09"]);
+  });
+
+  it("selects a Kemarin sheet by publication date and kind", async () => {
+    const fake = fakeDatabase({ edition: null });
+    await expect(readEdition(fake.database, "2026-08-09", "kemarin")).resolves.toBeNull();
+    expect(fake.calls[0]?.args).toEqual(["kemarin", "2026-08-09"]);
   });
 });
 
@@ -194,6 +207,8 @@ describe("publishEdition", () => {
     expect(fake.getBatched()).toHaveLength(19);
     expect(fake.calls[0]?.sql).toContain("ON CONFLICT(id) DO UPDATE");
     expect(fake.calls[0]?.args).toEqual([
+      "2026-08-09",
+      "hari_ini",
       "2026-08-09",
       "2026-08-09",
       1,
@@ -218,6 +233,7 @@ describe("publishEdition", () => {
       Array.from({ length: 8 }, (_, index) => `2026-08-09-${index + 1}`),
     );
     expect(translationCalls).toHaveLength(8);
+    expect(fake.calls[0]?.sql).toContain("INSERT INTO editions");
     expect(articleCalls[0]?.args.at(-1)).toBe("https://images.example.com/world/crisis-photo.jpg");
     expect(articleCalls[1]?.args.at(-1)).toBeNull();
     expect(translationCalls[0]?.args.slice(1)).toEqual([
@@ -225,6 +241,25 @@ describe("publishEdition", () => {
       edition.translations.zhHans.articles[0]?.dek,
       edition.translations.zhHans.articles[0]?.dateline,
       edition.translations.zhHans.articles[0]?.impact,
+    ]);
+  });
+
+  it("stores a Kemarin sheet under a kind-prefixed id and the Perth publication date", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-09T02:03:04.000Z"));
+    const fake = fakeDatabase();
+    const edition = validKemarinPublish();
+
+    await expect(publishEdition(fake.database, edition)).resolves.toEqual({
+      editionId: "kemarin-2026-08-09",
+      articleCount: 8,
+    });
+    expect(fake.calls[0]?.args.slice(0, 5)).toEqual([
+      "kemarin-2026-08-09",
+      "kemarin",
+      "1991-08-09",
+      "2026-08-09",
+      1,
     ]);
   });
 });
@@ -238,7 +273,7 @@ describe("readArticleImageUrl", () => {
     await expect(readArticleImageUrl(fake.database, "2026-08-11", 1)).resolves.toBe(
       "https://images.example.com/world/crisis-photo.jpg",
     );
-    expect(fake.calls[0]?.args).toEqual(["2026-08-11", 1]);
-    expect(fake.calls[0]?.sql).toContain("WHERE edition_id = ? AND rank = ?");
+    expect(fake.calls[0]?.args).toEqual(["hari_ini", "2026-08-11", 1]);
+    expect(fake.calls[0]?.sql).toContain("WHERE e.kind = ? AND e.publication_date = ? AND a.rank = ?");
   });
 });

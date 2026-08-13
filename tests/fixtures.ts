@@ -10,6 +10,7 @@ export function validEditionPublish(): EditionPublishInput {
   }));
 
   return {
+    kind: "hari_ini",
     editionDate: "2026-08-09",
     issueNumber: 1,
     mastheadDek:
@@ -36,5 +37,19 @@ export function validEditionPublish(): EditionPublishInput {
         articles: chineseArticles,
       },
     },
+  };
+}
+
+export function validKemarinPublish(): EditionPublishInput {
+  return {
+    ...validEditionPublish(),
+    kind: "kemarin",
+    editionDate: "1991-08-09",
+    publicationDate: "2026-08-09",
+    articles: validEditionPublish().articles.map((article, index) => ({
+      ...article,
+      sourceUrl: `https://en.wikipedia.org/wiki/Historical_crisis_report_${index + 1}`,
+      sourcePublishedAt: "1991-08-09T00:00:00Z",
+    })),
   };
 }

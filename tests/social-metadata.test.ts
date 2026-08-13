@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 
 import { gateResponse } from "../src/gate";
 import {
+  KEMARIN_SITE_URL,
+  KEMARIN_SOCIAL_DESCRIPTION,
+  KEMARIN_SOCIAL_TITLE,
   SITE_URL,
   SOCIAL_DESCRIPTION,
   SOCIAL_IMAGE_ALT,
@@ -41,6 +44,16 @@ describe("social-sharing contract", () => {
     expect(html).toContain(`content="${SOCIAL_IMAGE_URL}"`);
     expect(html).toContain(`content="${SOCIAL_IMAGE_ALT}"`);
     expect(html).toContain('<meta property="og:locale:alternate" content="zh_CN">');
+  });
+
+  it("uses Kemarin title and canonical URL on the /kemarin gate", async () => {
+    const response = gateResponse("site-key-test", "/kemarin");
+    const html = await response.text();
+
+    expect(html).toContain(`<link rel="canonical" href="${KEMARIN_SITE_URL}">`);
+    expect(html).toContain(`content="${KEMARIN_SOCIAL_TITLE}"`);
+    expect(html).toContain(`content="${KEMARIN_SOCIAL_DESCRIPTION}"`);
+    expect(html).toContain("LEMBAR KEMARIN");
   });
 
   it("ships a valid 1200 by 630 PNG banner", async () => {

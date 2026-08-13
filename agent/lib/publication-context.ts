@@ -1,6 +1,16 @@
+import {
+  DEFAULT_EDITION_KIND,
+  formatIsoDate,
+  historicalDateFromPublication,
+  KEMARIN_OFFSET_YEARS,
+  subtractCalendarYears,
+  type EditionKind,
+} from "../../shared/calendar";
+
 const PUBLICATION_TIME_ZONE = "Australia/Perth";
 const FIRST_EDITION_DATE = Date.UTC(2026, 7, 9);
 const DAY_MS = 24 * 60 * 60 * 1_000;
+const PERTH_UTC_OFFSET_HOURS = 8;
 export const EDITORIAL_WINDOW_HOURS = 36;
 export const EDITORIAL_WINDOW_MS = EDITORIAL_WINDOW_HOURS * 60 * 60 * 1_000;
 
@@ -33,20 +43,41 @@ function datePartsInPerth(now: Date): { year: number; month: number; day: number
   return { year: value("year"), month: value("month"), day: value("day") };
 }
 
-export function buildPublicationContext(now = new Date()) {
-  const { year, month, day } = datePartsInPerth(now);
-  const editionDate = [year, String(month).padStart(2, "0"), String(day).padStart(2, "0")].join("-");
+function perthMidnightUtc(parts: { year: number; month: number; day: number }): Date {
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, -PERTH_UTC_OFFSET_HOURS));
+}
+
+export function shiftPerthInstantByYears(now: Date, years: number): Date {
+  const today = datePartsInPerth(now);
+  const historical = subtractCalendarYears(today, years);
+  const elapsed = now.getTime() - perthMidnightUtc(today).getTime();
+  return new Date(perthMidnightUtc(historical).getTime() + elapsed);
+}
+
+export function buildPublicationContext(now = new Date(), kind: EditionKind = DEFAULT_EDITION_KIND) {
+  const today = datePartsInPerth(now);
+  const publicationDate = formatIsoDate(today);
+  const editionDate =
+    kind === "kemarin" ? historicalDateFromPublication(publicationDate) : publicationDate;
   const issueNumber = Math.max(
     1,
-    Math.floor((Date.UTC(year, month - 1, day) - FIRST_EDITION_DATE) / DAY_MS) + 1,
+    Math.floor((Date.UTC(today.year, today.month - 1, today.day) - FIRST_EDITION_DATE) / DAY_MS) + 1,
   );
+  const windowNow = kind === "kemarin" ? shiftPerthInstantByYears(now, KEMARIN_OFFSET_YEARS) : now;
 
   return {
+    kind,
     editionDate,
+    publicationDate,
     issueNumber,
     timeZone: PUBLICATION_TIME_ZONE,
     publicationTime: "07.00 WITA",
-    ...buildEditorialWindow(now),
+    offsetYears: kind === "kemarin" ? KEMARIN_OFFSET_YEARS : 0,
+    ...buildEditorialWindow(windowNow),
     expectedArticleCount: 8,
   } as const;
+}
+
+export function buildKemarinPublicationContext(now = new Date()) {
+  return buildPublicationContext(now, "kemarin");
 }

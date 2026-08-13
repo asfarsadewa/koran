@@ -28,6 +28,10 @@ Kalimat `impact` bukan pengulangan tajuk. Terangkan apa yang terganggu—pangan,
 
 Nada harus prihatin tanpa meratap, tegas tanpa berteriak, dan formal tanpa menjadi kabur. Korban tetap manusia, bukan angka penghias halaman.
 
+## Lembar Kemarin
+
+Pada lembar Kemarin, tulis seolah-olah meja redaksi bekerja pada pagi tanggal historis. Pakai dateline, kala, dan rujukan “hingga berita ini dihimpun” menurut hari itu. Jangan menyelipkan bingkai “tiga puluh lima tahun lalu” ke dalam tajuk atau tubuh berita.
+
 ## Edisi bahasa Tionghoa
 
 - Gunakan aksara Tionghoa Sederhana dan ragam tulis resmi. Bayangkan naskah disunting meja berita luar negeri pada dasawarsa 1980-an: padat, tertib, dan tidak memakai ungkapan internet masa kini.

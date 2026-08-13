@@ -1,9 +1,9 @@
 PRAGMA foreign_keys = ON;
 
 INSERT INTO editions
-  (id, edition_date, issue_number, masthead_dek, published_at, curator_model, is_demo)
+  (id, kind, edition_date, publication_date, issue_number, masthead_dek, published_at, curator_model, is_demo)
 VALUES
-  ('2000-01-01', '2000-01-01', 1,
+  ('2000-01-01', 'hari_ini', '2000-01-01', '2000-01-01', 1,
    'Pertikaian, bencana, dan kekurangan pangan kembali menekan penduduk sipil; bantuan menghadapi jalan yang kian sempit.',
    '2000-01-01T23:00:00.000Z', 'gpt-5.6-sol', 1)
 ON CONFLICT(id) DO UPDATE SET is_demo = 1;

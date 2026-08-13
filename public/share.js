@@ -1,4 +1,6 @@
 export const SHARE_SITE_URL = "https://koran.r3ptil.com/";
+export const HARI_INI_SHEET = "hari_ini";
+export const KEMARIN_SHEET = "kemarin";
 
 const CARD_WIDTH = 1080;
 const CARD_HEIGHT = 1350;
@@ -14,8 +16,9 @@ export function buildEditionShareUrl(
   articleRank,
   locale = INDONESIAN_LOCALE,
   siteUrl = SHARE_SITE_URL,
+  sheet = HARI_INI_SHEET,
 ) {
-  const url = new URL("/", siteUrl);
+  const url = new URL(sheet === KEMARIN_SHEET ? "/kemarin" : "/", siteUrl);
   url.searchParams.set("edisi", editionDate);
   if (locale === CHINESE_LOCALE) url.searchParams.set("bahasa", CHINESE_LOCALE);
   url.hash = `berita-${articleRank}`;
@@ -28,8 +31,9 @@ export function buildStoryShareData(
   articleRank,
   locale = INDONESIAN_LOCALE,
   siteUrl = SHARE_SITE_URL,
+  sheet = HARI_INI_SHEET,
 ) {
-  const url = buildEditionShareUrl(editionDate, articleRank, locale, siteUrl);
+  const url = buildEditionShareUrl(editionDate, articleRank, locale, siteUrl, sheet);
   return {
     title: headline,
     text:
@@ -244,7 +248,7 @@ async function waitForPrintFonts() {
   }
 }
 
-export async function renderStoryClipping({ article, editionDate, issueNumber, locale }) {
+export async function renderStoryClipping({ article, editionDate, issueNumber, locale, sheet }) {
   await waitForPrintFonts();
   const image = await loadStoryImage(article.imageUrl);
   const canvas = document.createElement("canvas");
@@ -263,7 +267,13 @@ export async function renderStoryClipping({ article, editionDate, issueNumber, l
   context.font = utilityFont(20, 820);
   context.letterSpacing = "2px";
   context.fillText(
-    resolvedLocale === CHINESE_LOCALE ? "世界新闻摘要日报" : "HARIAN IKHTISAR DUNIA",
+    sheet === KEMARIN_SHEET
+      ? resolvedLocale === CHINESE_LOCALE
+        ? "昨日专页 · 三十五年前同日"
+        : "LEMBAR KEMARIN · 35 TAHUN SILAM"
+      : resolvedLocale === CHINESE_LOCALE
+        ? "世界新闻摘要日报"
+        : "HARIAN IKHTISAR DUNIA",
     72,
     72,
   );
