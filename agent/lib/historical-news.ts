@@ -11,6 +11,12 @@ import { z } from "zod";
 import { isLikelyHistoricalSourceUrl } from "../../shared/edition";
 import { formatIsoDate, parseIsoDate } from "../../shared/calendar";
 import {
+  conflictPressureFor,
+  markCoverage,
+  namesPressureCountry,
+  type ConflictPressure,
+} from "./gdelt-conflict";
+import {
   buildEvidence,
   extractCitations,
   historicalEvidenceSchema,
@@ -94,6 +100,15 @@ export const historicalDiagnosticsSchema = z.object({
   withContemporaryEvidence: z.number().int().nonnegative(),
   withIndependentCorroboration: z.number().int().nonnegative(),
   encyclopediaOnly: z.number().int().nonnegative(),
+  conflictPressure: z.array(
+    z.object({
+      code: z.string(),
+      country: z.string(),
+      events: z.number().int(),
+      ratio: z.number(),
+      named: z.boolean(),
+    }),
+  ),
   fallbacks: z.array(z.string()),
   failures: z.array(z.string()),
 });
@@ -585,6 +600,7 @@ type EvidenceSummary = Pick<
 function summariseEvidence(
   evidence: HistoricalEvidence[],
   event: Pick<HistoricalCandidate, "title" | "description" | "discoveredBy">,
+  pressure: ConflictPressure[],
 ): EvidenceSummary {
   const independent = independentPublishers(evidence);
   return {
@@ -596,11 +612,18 @@ function summariseEvidence(
       discoveredBy: event.discoveredBy,
       title: event.title,
       description: event.description,
+      namesPressureCountry: namesPressureCountry(
+        `${event.title} ${event.description}`,
+        pressure,
+      ),
     }),
   };
 }
 
-function toCandidate(event: ParsedHistoricalEvent): HistoricalCandidate | null {
+function toCandidate(
+  event: ParsedHistoricalEvent,
+  pressure: ConflictPressure[],
+): HistoricalCandidate | null {
   if (!isLikelyHistoricalSourceUrl(event.url)) return null;
   let domain: string;
   try {
@@ -627,7 +650,7 @@ function toCandidate(event: ParsedHistoricalEvent): HistoricalCandidate | null {
     searchQuery: event.searchQuery,
     discoveredBy,
     evidence,
-    ...summariseEvidence(evidence, { ...event, discoveredBy }),
+    ...summariseEvidence(evidence, { ...event, discoveredBy }, pressure),
     ...(event.imageUrl ? { imageUrl: event.imageUrl } : {}),
   });
 }
@@ -638,6 +661,7 @@ const FIT_RANK: Record<HistoricalWindowFit, number> = { exact: 0, adjacent: 1, o
 function mergeCandidates(
   existing: HistoricalCandidate,
   incoming: HistoricalCandidate,
+  pressure: ConflictPressure[],
 ): HistoricalCandidate {
   const preferred =
     FIT_RANK[incoming.windowFit] < FIT_RANK[existing.windowFit] ? incoming : existing;
@@ -653,7 +677,7 @@ function mergeCandidates(
     discoveredBy,
     evidence,
     ...(imageUrl ? { imageUrl } : {}),
-    ...summariseEvidence(evidence, { ...preferred, discoveredBy }),
+    ...summariseEvidence(evidence, { ...preferred, discoveredBy }, pressure),
   };
 }
 
@@ -672,6 +696,15 @@ export async function collectHistoricalCandidates(
   const parsed: ParsedHistoricalEvent[] = [];
   const fallbacks: string[] = [];
   const failures: string[] = [];
+
+  // Read before the sweep so candidates naming a country under unusual conflict
+  // can be scored as they are built. An unindexed year is a maintenance fact, not
+  // a quiet absence of violence.
+  const indexed = conflictPressureFor(window.editionDate);
+  if (!indexed) {
+    failures.push(`gdelt:${window.editionDate.slice(0, 4)} is not in the conflict index`);
+  }
+  const pressure = indexed ?? [];
 
   const yearSection = await fetchYearMonthWikitext(editionParts.year, monthName, signal);
   searchesRun += yearSection.requests;
@@ -724,10 +757,13 @@ export async function collectHistoricalCandidates(
       ledger.withoutTimestamp += 1;
       continue;
     }
-    const candidate = toCandidate(event);
+    const candidate = toCandidate(event, pressure);
     if (!candidate) continue;
     const existing = byUrl.get(candidate.url);
-    byUrl.set(candidate.url, existing ? mergeCandidates(existing, candidate) : candidate);
+    byUrl.set(
+      candidate.url,
+      existing ? mergeCandidates(existing, candidate, pressure) : candidate,
+    );
   }
 
   // Date fit first, because the sheet exists to print that day; evidence strength
@@ -762,6 +798,10 @@ export async function collectHistoricalCandidates(
       encyclopediaOnly: ranked.filter(
         (item) => !item.evidence.some((source) => source.sourceType !== "encyclopedia"),
       ).length,
+      conflictPressure: markCoverage(
+        pressure,
+        ranked.map((item) => `${item.title} ${item.description}`),
+      ),
       fallbacks,
       failures,
     },

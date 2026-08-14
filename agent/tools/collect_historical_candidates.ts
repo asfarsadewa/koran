@@ -34,7 +34,7 @@ function renderEvidence(evidence: HistoricalEvidence[]): string {
 
 export default defineTool({
   description:
-    "Collect one historical candidate ledger for the Kemarin sheet. Pass editionDate, publicationDate, and both window timestamps from kemarin_publication_context without change. The tool reads the Wikipedia year chronology for the printed month and the month before it, the calendar-day page, and the Wikimedia on-this-day feeds, then returns dated events whose sources are classified as contemporary reporting, later history, or undated. Events dated after the printed day are dropped so the sheet cannot report what had not happened yet.",
+    "Collect one historical candidate ledger for the Kemarin sheet. Pass editionDate, publicationDate, and both window timestamps from kemarin_publication_context without change. The tool reads the Wikipedia year chronology for the printed month and the month before it, the calendar-day page, and the Wikimedia on-this-day feeds, then returns dated events whose sources are classified as contemporary reporting, later history, or undated. Events dated after the printed day are dropped so the sheet cannot report what had not happened yet. It also reports which countries saw unusual conflict that day according to the GDELT event archive, and which of those no candidate mentions — a warning that the day's coverage may be lopsided, never a source in itself.",
   inputSchema: historicalWindowSchema,
   outputSchema: historicalCandidateResultSchema,
   async execute(input, context) {
@@ -61,6 +61,20 @@ export default defineTool({
     });
 
     const fit = output.diagnostics.windowFit;
+    const unnamed = output.diagnostics.conflictPressure.filter((entry) => !entry.named);
+    const pressureLines = output.diagnostics.conflictPressure.length
+      ? [
+          `Tekanan pertikaian pada tanggal cetak, menurut arsip peristiwa GDELT, diukur terhadap kelaziman negeri itu sendiri sepanjang tahun: ${output.diagnostics.conflictPressure
+            .map((entry) => `${entry.country} ${entry.ratio.toFixed(1)}× (${entry.events})`)
+            .join(", ")}.`,
+          unnamed.length
+            ? `Tidak ada satu pun calon di atas yang menyebut ${unnamed
+                .map((entry) => entry.country)
+                .join(", ")}. Arsip itu hanya mencatat bahwa kekerasan terjadi di sana; ia tidak memuat judul, ringkasan, atau tautan, sehingga tidak boleh dipakai sebagai sumber. Anggaplah ini petunjuk bahwa liputan hari itu mungkin timpang, bukan berita yang sudah siap. Apabila hendak memuatnya, cari lebih dahulu sumber yang sah; apabila tidak ada, jangan mengarang.`
+            : "Setiap negeri yang tertekan hari itu sudah disebut oleh sekurang-kurangnya satu calon.",
+        ]
+      : [];
+
     return {
       type: "text",
       value: [
@@ -68,6 +82,7 @@ export default defineTool({
         `Kesesuaian tanggal: exact ${fit.exact} (hari cetak atau petang sebelumnya), adjacent ${fit.adjacent} (sehari sebelum atau sesudah), ongoing ${fit.ongoing} (krisis yang sudah berjalan dan masih berlangsung pagi itu). Daftar disusun menurut kesesuaian tanggal lebih dahulu, lalu menurut nilai bukti di dalam tiap golongan. Nilai bukti hanya mengurutkan daftar, bukan memilih edisi.`,
         `Bukti sezaman pada ${output.diagnostics.withContemporaryEvidence} catatan, sumber bebas pada ${output.diagnostics.withIndependentCorroboration}, dan ${output.diagnostics.encyclopediaOnly} catatan hanya bersandar pada ensiklopedia.`,
         `Disisihkan: ${output.diagnostics.excludedFuture} peristiwa yang baru terjadi sesudah tanggal cetak, ${output.diagnostics.excludedTooOld} yang terlalu jauh ke belakang, dan ${output.excludedWithoutTimestamp} tanpa tanggal.`,
+        ...pressureLines,
         ...(output.diagnostics.fallbacks.length
           ? [`Umpan cadangan dipakai: ${output.diagnostics.fallbacks.join(", ")}.`]
           : []),

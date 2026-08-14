@@ -301,6 +301,8 @@ export interface ScoreInput {
   discoveredBy: string[];
   title: string;
   description: string;
+  /** The candidate names a country under unusual conflict on the printed day. */
+  namesPressureCountry?: boolean;
 }
 
 /**
@@ -319,6 +321,7 @@ export function scoreCandidate(input: ScoreInput): number {
   if (input.evidence.some((item) => item.sourceType === "institution")) score += 10;
   if (input.discoveredBy.length > 1) score += 6;
   if (IMPACT_KEYWORDS.test(`${input.title} ${input.description}`)) score += 6;
+  if (input.namesPressureCountry) score += 8;
   if (!hasContemporary && hasRetrospective) score -= 10;
   if (input.independentPublishers === 0) score -= 8;
   return score;

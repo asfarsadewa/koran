@@ -106,20 +106,27 @@ Recommended role:
 - expose citations worth following;
 - provide non-graphic contextual images when suitable.
 
-### Tier B — GDELT: add as a global event-discovery signal
+### Tier B — GDELT: a coverage signal, not a discovery layer
 
 GDELT's historical event archive reaches back to 1979, which comfortably covers Juara Merdeka's current 35-year offset. It is particularly attractive because the data is global and event-oriented rather than limited to famous historical anniversaries.
 
-Recommended role:
+The spike this section asked for has now been run, and it settles the question of what GDELT can be here. Two findings matter:
 
-- identify conflicts, protests, coercion, displacement, disasters and related events that may be absent from Wikipedia anniversary lists;
-- improve geographic diversity;
-- provide structured actors, locations and event types;
-- help detect significant ongoing crises around the historical date.
+**The historical rows carry no text.** A 1991 event row has 57 columns and none of them is `SOURCEURL` — that column only appears from 2013, when GDELT began ingesting the web. Of 4,374 events recorded for 15 August 1991, zero carry a URL. What a row does carry is an event code, two actors, coordinates and a tone score. That is enough to know something violent happened in a place; it is not enough to write a paragraph, and it can never be evidence.
 
-Do **not** treat a GDELT event row as sufficient publication evidence by itself. Use it as another discovery/index signal.
+So GDELT cannot be a peer of Wikimedia as a candidate generator for this era, and the diagram in §3 overstates it. A GDELT row cannot become an event seed with a title, a description and a URL, because it has none of the three.
 
-Implementation note: start with a spike against GDELT 1.0 historical data before committing to a production integration. Determine the smallest practical date-bounded query or cached extraction suitable for an Eve run.
+**Raw volume measures wire attention, not violence.** The United States and United Kingdom lead the material-conflict count on almost every day of 1991. Ranking by volume would push the sheet toward the media centres the editorial standard exists to look past. Measuring each country against its own yearly baseline instead surfaces, for 15 August 1991: Burundi at 30×, Papua New Guinea at 24×, Cameroon at 21×, Guatemala at 7×, Gaza Strip at 7×. None of those appear anywhere in Wikipedia's August 1991 chronology.
+
+Revised role:
+
+- name the countries under unusual conflict on the printed day, and say which of them no candidate so much as mentions;
+- lift candidates that do name such a country, so a Wikipedia entry about a genuine crisis outranks an entry about a cartoon channel;
+- **never** serve as a source, a headline, or a reason to write a story that has no other support.
+
+Access shape: the archive is one zip per year for 1979–2005 — 48 MB compressed and 395 MB of TSV for 1991 — with no per-day files and no byte-range support. Downloading that on every run to read one day is absurd, so the year is reduced once, offline, to per-day country anomalies and committed as a small generated module. See `scripts/build-gdelt-index.mjs`.
+
+The honest limit: this improves what the desk *knows it is missing*. It does not supply the missing story. That still requires Tier C.
 
 ### Tier C — contemporary newspaper archive
 
@@ -371,13 +378,18 @@ Three things were found during the work that the plan did not anticipate:
 
 **Still open after Phase A:** many dates yield no `exact` candidate at all, because the Wikipedia day page carries no entry for that year. Recall, not honesty, is now the binding constraint — which is what Phase B is for.
 
-### Phase B — add GDELT discovery
+### Phase B — add GDELT coverage pressure — **complete, re-scoped**
 
-Build a proof of concept that can retrieve and normalise events around one historical date.
+Originally written as "add GDELT discovery": retrieve and normalise events around one historical date, then feed them in as a second stream of candidates. The spike recorded in Tier B above shows that cannot work for this era — the rows have no headline, no summary and no URL — so Phase B shipped as a coverage signal instead.
 
-Test against several known editions, including dates where Wikipedia has sparse non-Western coverage.
+What landed:
 
-**Outcome:** candidate recall and geographic diversity improve.
+- `scripts/build-gdelt-index.mjs` reduces a year of the archive to per-day country anomalies, offline, and writes a generated module. 1991 and 1992 are built; the script must be re-run when the printed year rolls over, and an unindexed year is reported in the ledger rather than passing silently as a quiet day.
+- The ledger names the countries under unusual conflict on the printed date and flags those no candidate mentions. The flag is stated as *no candidate names this country*, which is a fact about the text, rather than *this country is uncovered*, which the matching is not accurate enough to claim.
+- Candidates naming a country under pressure gain a small ranking bonus.
+- The instructions forbid treating the note as a source or as licence to write an unsupported story.
+
+**Outcome:** geographic blind spots become visible. Recall does not improve — that is the honest limit of a source with no text, and the reason Phase C matters more than this plan originally implied.
 
 ### Phase C — add one contemporary newspaper provider
 
@@ -386,6 +398,8 @@ Spike NYT historical search first.
 Do not use it as the global arbiter. Attach matches as evidence to existing event seeds.
 
 **Outcome:** `/kemarin` begins to distinguish what was reported then from what is known now.
+
+**Now the highest-value phase.** After Phases A and B the sheet is honest about what it knows and visibly aware of what it is missing, but it still has only one source of actual prose about the past. Many printed dates yield no `exact` candidate at all, and the countries GDELT flags are precisely the ones Wikipedia's chronology never covers. A provider with real headlines is the only thing that closes either gap. Note the tension to test in the spike: one American newspaper's archive will answer well for the countries its correspondents covered, which may not be Burundi or Papua New Guinea.
 
 ### Phase D — targeted archival enrichment
 

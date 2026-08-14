@@ -238,6 +238,19 @@ describe("evidence scoring", () => {
     expect(two).toBeGreaterThan(one);
   });
 
+  it("lifts a candidate from a country the archive shows under unusual conflict", () => {
+    const base = {
+      evidence: [encyclopedia],
+      independentPublishers: 0,
+      discoveredBy: ["wikipedia:year-chronology"],
+      title: "Shelling in south Lebanon",
+      description: "Families leave the villages after a night of artillery fire.",
+    };
+    expect(scoreCandidate({ ...base, namesPressureCountry: true })).toBeGreaterThan(
+      scoreCandidate(base),
+    );
+  });
+
   it("rewards an institutional record of the human toll", () => {
     const base = {
       independentPublishers: 1,

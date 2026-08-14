@@ -355,6 +355,32 @@ describe("collectHistoricalCandidates", () => {
     expect(result.diagnostics.failures[0]).toContain("HTTP 503");
   });
 
+  it("names the countries under conflict that day and which the ledger passes over", async () => {
+    const result = await runCollector(archiveFetchMock());
+    const pressure = result.diagnostics.conflictPressure;
+
+    expect(pressure.length).toBeGreaterThan(0);
+    // Wikipedia's August 1991 chronology carries nothing from Zimbabwe or Malawi.
+    expect(pressure.filter((entry) => !entry.named).length).toBeGreaterThan(0);
+    expect(pressure.every((entry) => entry.country && entry.ratio > 0)).toBe(true);
+  });
+
+  it("reports an unindexed year rather than an absence of violence", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-13T00:00:00.000Z"));
+    vi.stubGlobal("fetch", archiveFetchMock());
+    const resultPromise = collectHistoricalCandidates({
+      ...window,
+      editionDate: "1975-08-13",
+      publicationDate: "2010-08-13",
+    });
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(result.diagnostics.conflictPressure).toEqual([]);
+    expect(result.diagnostics.failures.some((note) => note.includes("gdelt:1975"))).toBe(true);
+  });
+
   it("reports a non-success Wikimedia response after the request boundary", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-14T00:00:00.000Z"));
