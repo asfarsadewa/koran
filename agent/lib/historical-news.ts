@@ -1,8 +1,43 @@
+/**
+ * Discovery for the Kemarin sheet.
+ *
+ * Wikimedia is read for recall — what may have mattered on the printed day — and
+ * every candidate leaves here dated, deduplicated and carrying the provenance the
+ * evidence layer attached to it. Nothing is collected that a paper printed that
+ * morning could not have known.
+ */
 import { z } from "zod";
 
 import { isLikelyHistoricalSourceUrl } from "../../shared/edition";
 import { formatIsoDate, parseIsoDate } from "../../shared/calendar";
+import {
+  buildEvidence,
+  extractCitations,
+  historicalEvidenceSchema,
+  independentPublishers,
+  scoreCandidate,
+  type HistoricalEvidence,
+  type ParsedCitation,
+} from "./historical-evidence";
+import {
+  classifyWindowFit,
+  dayDelta,
+  HISTORICAL_WINDOW_FITS,
+  ONGOING_LOOKBACK_DAYS,
+  type DateParts,
+  type HistoricalWindowFit,
+} from "./historical-window";
 import { EDITORIAL_WINDOW_MS } from "./publication-context";
+
+// The vocabulary a reader of the ledger needs, re-exported so consumers of the
+// collector do not have to know which module each half lives in.
+export { HISTORICAL_WINDOW_FITS, type HistoricalWindowFit } from "./historical-window";
+export {
+  EVIDENCE_SOURCE_TYPES,
+  EVIDENCE_TIMINGS,
+  historicalEvidenceSchema,
+  type HistoricalEvidence,
+} from "./historical-evidence";
 
 const parseableTimestampSchema = z.string().refine(
   (value) => Number.isFinite(Date.parse(value)),
@@ -35,10 +70,32 @@ export const historicalCandidateSchema = z.object({
   sourceName: z.string(),
   domain: z.string(),
   publishedAt: z.string(),
-  windowFit: z.enum(["exact", "adjacent", "month"]),
+  windowFit: z.enum(HISTORICAL_WINDOW_FITS),
+  dayOffset: z.number().int(),
   searchQuery: z.string(),
+  discoveredBy: z.array(z.string()),
   imageUrl: z.string().url().optional(),
-  corroboratingUrls: z.array(z.string().url()),
+  evidence: z.array(historicalEvidenceSchema),
+  hasContemporaryEvidence: z.boolean(),
+  hasIndependentCorroboration: z.boolean(),
+  evidenceScore: z.number(),
+});
+
+export const historicalDiagnosticsSchema = z.object({
+  discovery: z.record(z.string(), z.number().int()),
+  deduplicated: z.number().int().nonnegative(),
+  excludedFuture: z.number().int().nonnegative(),
+  excludedTooOld: z.number().int().nonnegative(),
+  windowFit: z.object({
+    exact: z.number().int().nonnegative(),
+    adjacent: z.number().int().nonnegative(),
+    ongoing: z.number().int().nonnegative(),
+  }),
+  withContemporaryEvidence: z.number().int().nonnegative(),
+  withIndependentCorroboration: z.number().int().nonnegative(),
+  encyclopediaOnly: z.number().int().nonnegative(),
+  fallbacks: z.array(z.string()),
+  failures: z.array(z.string()),
 });
 
 export const historicalCandidateResultSchema = z.object({
@@ -49,6 +106,7 @@ export const historicalCandidateResultSchema = z.object({
   publicationDate: z.string(),
   excludedOutsideWindow: z.number().int().nonnegative(),
   excludedWithoutTimestamp: z.number().int().nonnegative(),
+  diagnostics: historicalDiagnosticsSchema,
   results: z.array(historicalCandidateSchema),
 });
 
@@ -75,7 +133,6 @@ const MONTH_NAMES = [
 ] as const;
 
 const WIKI_LINK = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/gu;
-const CITE_URL = /\burl\s*=\s*(https:\/\/[^\s|}]+)/giu;
 const FILE_OR_CATEGORY = /^(?:File|Image|Category|Special|Wikipedia|Template|Help):/iu;
 
 type JsonRecord = Record<string, unknown>;
@@ -134,14 +191,9 @@ export function extractWikiTitles(markup: string): string[] {
   return [...new Set(titles)];
 }
 
-export function extractCiteUrls(markup: string): string[] {
-  const urls: string[] = [];
-  for (const match of markup.matchAll(CITE_URL)) {
-    const url = (match[1] ?? "").replace(/[.,;]+$/u, "");
-    if (isLikelyHistoricalSourceUrl(url)) urls.push(url);
-  }
-  return [...new Set(urls)];
-}
+/* -------------------------------------------------------------------------- */
+/* Wikitext and feed parsing                                                  */
+/* -------------------------------------------------------------------------- */
 
 /**
  * Running tally of the candidates each parser drops, so the ledger handed to the
@@ -150,20 +202,23 @@ export function extractCiteUrls(markup: string): string[] {
 export interface HistoricalSkipLedger {
   outsideWindow: number;
   withoutTimestamp: number;
+  future: number;
+  tooOld: number;
 }
 
 export function skipLedger(): HistoricalSkipLedger {
-  return { outsideWindow: 0, withoutTimestamp: 0 };
+  return { outsideWindow: 0, withoutTimestamp: 0, future: 0, tooOld: 0 };
 }
 
 export interface ParsedHistoricalEvent {
   title: string;
   description: string;
   eventDate: string;
-  windowFit: HistoricalCandidate["windowFit"];
+  windowFit: HistoricalWindowFit;
+  dayOffset: number;
   sourceName: string;
   url: string;
-  corroboratingUrls: string[];
+  citations: ParsedCitation[];
   searchQuery: string;
   imageUrl?: string;
 }
@@ -172,25 +227,10 @@ function eventDateIso(year: number, month: number, day: number): string {
   return `${formatIsoDate({ year, month, day })}T12:00:00.000Z`;
 }
 
-function classifyWindowFit(
-  eventTime: number,
-  windowStart: number,
-  windowEnd: number,
-  editionParts: { year: number; month: number; day: number },
-  eventParts: { year: number; month: number; day: number },
-): HistoricalCandidate["windowFit"] | null {
-  const dayDelta =
-    (Date.UTC(eventParts.year, eventParts.month - 1, eventParts.day) -
-      Date.UTC(editionParts.year, editionParts.month - 1, editionParts.day)) /
-    86_400_000;
-  if (dayDelta === 0 || dayDelta === -1 || (eventTime >= windowStart && eventTime <= windowEnd)) {
-    return "exact";
-  }
-  if (Math.abs(dayDelta) <= 2) return "adjacent";
-  if (eventParts.year === editionParts.year && eventParts.month === editionParts.month) {
-    return "month";
-  }
-  return null;
+function recordRejection(ledger: HistoricalSkipLedger, dayOffset: number): void {
+  ledger.outsideWindow += 1;
+  if (dayOffset > 0) ledger.future += 1;
+  else ledger.tooOld += 1;
 }
 
 const MONTH_BULLET =
@@ -200,8 +240,6 @@ export function parseYearMonthWikitext(
   wikitext: string,
   year: number,
   editionDate: string,
-  windowStart: number,
-  windowEnd: number,
   ledger: HistoricalSkipLedger = skipLedger(),
 ): ParsedHistoricalEvent[] {
   const editionParts = parseIsoDate(editionDate);
@@ -209,17 +247,19 @@ export function parseYearMonthWikitext(
   const events: ParsedHistoricalEvent[] = [];
 
   for (const match of wikitext.matchAll(MONTH_BULLET)) {
-    const startLabel = match[1] ?? "";
-    const body = match[3] ?? "";
-    const startParts = parseMonthDayLabel(startLabel, year);
+    const startParts = parseMonthDayLabel(match[1] ?? "", year);
     if (!startParts) {
       ledger.withoutTimestamp += 1;
       continue;
     }
-    const eventTime = Date.parse(eventDateIso(startParts.year, startParts.month, startParts.day));
-    const fit = classifyWindowFit(eventTime, windowStart, windowEnd, editionParts, startParts);
+    const endDay = match[2] ? Number(match[2]) : null;
+    const endParts =
+      endDay === null
+        ? null
+        : parseIsoDate(formatIsoDate({ year, month: startParts.month, day: endDay }));
+    const fit = classifyWindowFit(editionParts, startParts, endParts);
     if (!fit) {
-      ledger.outsideWindow += 1;
+      recordRejection(ledger, dayDelta(editionParts, startParts));
       continue;
     }
 
@@ -230,28 +270,26 @@ export function parseYearMonthWikitext(
       : `https://en.wikipedia.org/wiki/${year}`;
     if (!url || !isLikelyHistoricalSourceUrl(url)) continue;
 
-    const description = cleanWikiText(body);
+    const description = cleanWikiText(match[3] ?? "");
     if (description.length < 24) continue;
 
     events.push({
       title: cleanWikiText(primaryTitle ?? description, 300),
       description,
       eventDate: eventDateIso(startParts.year, startParts.month, startParts.day),
-      windowFit: fit,
+      windowFit: fit.fit,
+      dayOffset: fit.dayOffset,
       sourceName: "Wikipedia",
       url,
-      corroboratingUrls: extractCiteUrls(match[0]).filter((candidate) => candidate !== url),
-      searchQuery: `wikipedia:${year}-month`,
+      citations: extractCitations(match[0]).filter((citation) => citation.url !== url),
+      searchQuery: "wikipedia:year-chronology",
     });
   }
 
   return events;
 }
 
-function parseMonthDayLabel(
-  label: string,
-  year: number,
-): { year: number; month: number; day: number } | null {
+function parseMonthDayLabel(label: string, year: number): DateParts | null {
   const match = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})$/u.exec(
     label.trim(),
   );
@@ -266,8 +304,6 @@ const DAY_PAGE_BULLET = /^\*\s*\[\[(\d{4})\]\]\s*[–—:-]\s*(.+)$/gmu;
 export function parseOnThisDayPageWikitext(
   wikitext: string,
   editionDate: string,
-  windowStart: number,
-  windowEnd: number,
   ledger: HistoricalSkipLedger = skipLedger(),
 ): ParsedHistoricalEvent[] {
   const editionParts = parseIsoDate(editionDate);
@@ -276,56 +312,64 @@ export function parseOnThisDayPageWikitext(
 
   for (const match of wikitext.matchAll(DAY_PAGE_BULLET)) {
     const year = Number(match[1]);
-    const body = match[2] ?? "";
     if (year !== editionParts.year) {
-      ledger.outsideWindow += 1;
+      recordRejection(ledger, year > editionParts.year ? 1 : -1);
       continue;
     }
-    const eventTime = Date.parse(eventDateIso(year, editionParts.month, editionParts.day));
-    const fit = classifyWindowFit(
-      eventTime,
-      windowStart,
-      windowEnd,
-      editionParts,
-      { year, month: editionParts.month, day: editionParts.day },
-    );
+    const eventParts = { year, month: editionParts.month, day: editionParts.day };
+    const fit = classifyWindowFit(editionParts, eventParts);
     if (!fit) {
-      ledger.outsideWindow += 1;
+      recordRejection(ledger, dayDelta(editionParts, eventParts));
       continue;
     }
     const titles = extractWikiTitles(match[0]);
     const primaryTitle = titles[0];
     const url = primaryTitle ? wikipediaArticleUrl(primaryTitle) : null;
     if (!url) continue;
-    const description = cleanWikiText(body);
+    const description = cleanWikiText(match[2] ?? "");
     if (description.length < 24) continue;
     events.push({
       title: cleanWikiText(primaryTitle ?? description, 300),
       description,
       eventDate: eventDateIso(year, editionParts.month, editionParts.day),
-      windowFit: fit,
+      windowFit: fit.fit,
+      dayOffset: fit.dayOffset,
       sourceName: "Wikipedia",
       url,
-      corroboratingUrls: extractCiteUrls(match[0]).filter((candidate) => candidate !== url),
-      searchQuery: "wikipedia:on-this-day-page",
+      citations: extractCitations(match[0]).filter((citation) => citation.url !== url),
+      searchQuery: "wikipedia:day-page",
     });
   }
 
   return events;
 }
 
+/**
+ * The feed names its list after the kind that was asked for: `onthisday/events`
+ * answers with `events`, `onthisday/selected` with `selected`. Reading only the
+ * first key quietly discarded every curated entry.
+ */
+const FEED_LIST_KEYS = ["events", "selected"] as const;
+
+export function onThisDayEntries(payload: unknown): unknown[] | null {
+  const root = record(payload);
+  if (!root) return null;
+  for (const key of FEED_LIST_KEYS) {
+    const list = root[key];
+    if (Array.isArray(list)) return list;
+  }
+  return null;
+}
+
 export function parseOnThisDayFeed(
   payload: unknown,
   editionDate: string,
-  windowStart: number,
-  windowEnd: number,
   searchQuery: string,
   ledger: HistoricalSkipLedger = skipLedger(),
 ): ParsedHistoricalEvent[] {
   const editionParts = parseIsoDate(editionDate);
   if (!editionParts) return [];
-  const root = record(payload);
-  const items = Array.isArray(root?.events) ? root.events : [];
+  const items = onThisDayEntries(payload) ?? [];
   const events: ParsedHistoricalEvent[] = [];
 
   for (const item of items) {
@@ -336,29 +380,25 @@ export function parseOnThisDayFeed(
       continue;
     }
     if (year !== editionParts.year) {
-      ledger.outsideWindow += 1;
+      recordRejection(ledger, year > editionParts.year ? 1 : -1);
       continue;
     }
     const pages = Array.isArray(entry?.pages) ? entry.pages : [];
     const page = pages.map(record).find((candidate) => candidate && text(candidate.title));
     const title = text(page?.titles && record(page.titles)?.normalized) ?? text(page?.title);
-    const extract = text(page?.extract) ?? text(entry?.text);
+    // The entry text says what happened that day; the page extract only says what
+    // the linked article is about, which reads as an encyclopedia, not a report.
+    const extract = text(entry?.text) ?? text(page?.extract);
     const pageUrl =
       text(record(record(page?.content_urls)?.desktop)?.page) ??
       (title ? wikipediaArticleUrl(title) : null);
     if (!title || !extract || !pageUrl || extract.length < 24) continue;
     if (!isLikelyHistoricalSourceUrl(pageUrl)) continue;
 
-    const eventTime = Date.parse(eventDateIso(year, editionParts.month, editionParts.day));
-    const fit = classifyWindowFit(
-      eventTime,
-      windowStart,
-      windowEnd,
-      editionParts,
-      { year, month: editionParts.month, day: editionParts.day },
-    );
+    const eventParts = { year, month: editionParts.month, day: editionParts.day };
+    const fit = classifyWindowFit(editionParts, eventParts);
     if (!fit) {
-      ledger.outsideWindow += 1;
+      recordRejection(ledger, dayDelta(editionParts, eventParts));
       continue;
     }
 
@@ -367,10 +407,11 @@ export function parseOnThisDayFeed(
       title: cleanWikiText(title, 300),
       description: cleanWikiText(extract),
       eventDate: eventDateIso(year, editionParts.month, editionParts.day),
-      windowFit: fit,
+      windowFit: fit.fit,
+      dayOffset: fit.dayOffset,
       sourceName: "Wikipedia",
       url: pageUrl,
-      corroboratingUrls: [],
+      citations: [],
       searchQuery,
       ...(thumbnail && thumbnail.startsWith("https:") ? { imageUrl: thumbnail } : {}),
     });
@@ -378,6 +419,10 @@ export function parseOnThisDayFeed(
 
   return events;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Wikimedia transport                                                        */
+/* -------------------------------------------------------------------------- */
 
 async function waitForRateWindow(): Promise<void> {
   const remaining = 1_100 - (Date.now() - lastRequestAt);
@@ -470,15 +515,92 @@ export async function fetchDayPageWikitext(
   return text(record(body?.parse)?.wikitext) ?? "";
 }
 
-function onThisDayUrl(month: number, day: number, kind: "events" | "selected"): URL {
-  return new URL(
-    `https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/${kind}/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}`,
-  );
+/**
+ * The Wikimedia API Portal is migrating, so the feed is read through the portal
+ * host first and the equivalent per-wiki REST route second. Both answer with the
+ * same OnThisDay profile, and neither is allowed to take the whole sweep down —
+ * the chronology and day-page parsers stand on their own.
+ */
+export const ON_THIS_DAY_ENDPOINTS = [
+  {
+    name: "api.wikimedia.org",
+    url: (month: string, day: string, kind: string) =>
+      new URL(`https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/${kind}/${month}/${day}`),
+  },
+  {
+    name: "en.wikipedia.org/api/rest_v1",
+    url: (month: string, day: string, kind: string) =>
+      new URL(`https://en.wikipedia.org/api/rest_v1/feed/onthisday/${kind}/${month}/${day}`),
+  },
+] as const;
+
+export interface FeedFetchResult {
+  payload: unknown;
+  requests: number;
+  fallback?: string;
+  failure?: string;
 }
 
-function toCandidate(
-  event: ParsedHistoricalEvent & { imageUrl?: string },
-): HistoricalCandidate | null {
+export async function fetchOnThisDayFeed(
+  month: number,
+  day: number,
+  kind: "events" | "selected",
+  signal?: AbortSignal,
+): Promise<FeedFetchResult> {
+  const monthPart = String(month).padStart(2, "0");
+  const dayPart = String(day).padStart(2, "0");
+  let requests = 0;
+  let lastFailure = "";
+
+  for (const [index, endpoint] of ON_THIS_DAY_ENDPOINTS.entries()) {
+    requests += 1;
+    try {
+      const payload = await wikipediaGet(endpoint.url(monthPart, dayPart, kind), signal);
+      if (onThisDayEntries(payload)) {
+        return {
+          payload,
+          requests,
+          ...(index > 0 ? { fallback: `${kind}:${endpoint.name}` } : {}),
+        };
+      }
+      lastFailure = `${kind}:${endpoint.name} returned no entries`;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      lastFailure = `${kind}:${endpoint.name} ${(error as Error).message}`;
+    }
+  }
+
+  return { payload: null, requests, failure: lastFailure };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Collection                                                                 */
+/* -------------------------------------------------------------------------- */
+
+type EvidenceSummary = Pick<
+  HistoricalCandidate,
+  "hasContemporaryEvidence" | "hasIndependentCorroboration" | "evidenceScore"
+>;
+
+function summariseEvidence(
+  evidence: HistoricalEvidence[],
+  event: Pick<HistoricalCandidate, "title" | "description" | "discoveredBy">,
+): EvidenceSummary {
+  const independent = independentPublishers(evidence);
+  return {
+    hasContemporaryEvidence: evidence.some((item) => item.timing === "contemporary"),
+    hasIndependentCorroboration: independent.size > 0,
+    evidenceScore: scoreCandidate({
+      evidence,
+      independentPublishers: independent.size,
+      discoveredBy: event.discoveredBy,
+      title: event.title,
+      description: event.description,
+    }),
+  };
+}
+
+function toCandidate(event: ParsedHistoricalEvent): HistoricalCandidate | null {
   if (!isLikelyHistoricalSourceUrl(event.url)) return null;
   let domain: string;
   try {
@@ -486,6 +608,13 @@ function toCandidate(
   } catch {
     return null;
   }
+
+  const evidence = [
+    buildEvidence({ url: event.url }, event.eventDate),
+    ...event.citations.slice(0, 6).map((citation) => buildEvidence(citation, event.eventDate)),
+  ];
+  const discoveredBy = [event.searchQuery];
+
   return historicalCandidateSchema.parse({
     title: event.title,
     url: event.url,
@@ -494,18 +623,38 @@ function toCandidate(
     domain,
     publishedAt: event.eventDate,
     windowFit: event.windowFit,
+    dayOffset: event.dayOffset,
     searchQuery: event.searchQuery,
-    corroboratingUrls: event.corroboratingUrls.slice(0, 4),
+    discoveredBy,
+    evidence,
+    ...summariseEvidence(evidence, { ...event, discoveredBy }),
     ...(event.imageUrl ? { imageUrl: event.imageUrl } : {}),
   });
 }
 
-function betterFit(
-  left: HistoricalCandidate["windowFit"],
-  right: HistoricalCandidate["windowFit"],
-): boolean {
-  const rank = { exact: 0, adjacent: 1, month: 2 };
-  return rank[left] < rank[right];
+const FIT_RANK: Record<HistoricalWindowFit, number> = { exact: 0, adjacent: 1, ongoing: 2 };
+
+/** One event reached by two surfaces is one candidate carrying both sets of evidence. */
+function mergeCandidates(
+  existing: HistoricalCandidate,
+  incoming: HistoricalCandidate,
+): HistoricalCandidate {
+  const preferred =
+    FIT_RANK[incoming.windowFit] < FIT_RANK[existing.windowFit] ? incoming : existing;
+  const evidence = [...existing.evidence];
+  for (const item of incoming.evidence) {
+    if (!evidence.some((known) => known.url === item.url)) evidence.push(item);
+  }
+  const discoveredBy = [...new Set([...existing.discoveredBy, ...incoming.discoveredBy])];
+  const imageUrl = existing.imageUrl ?? incoming.imageUrl;
+
+  return {
+    ...preferred,
+    discoveredBy,
+    evidence,
+    ...(imageUrl ? { imageUrl } : {}),
+    ...summariseEvidence(evidence, { ...preferred, discoveredBy }),
+  };
 }
 
 export async function collectHistoricalCandidates(
@@ -515,69 +664,80 @@ export async function collectHistoricalCandidates(
   const window = historicalWindowSchema.parse(rawWindow);
   const editionParts = parseIsoDate(window.editionDate);
   if (!editionParts) throw new Error("Kemarin edition date is invalid");
-  const windowStart = Date.parse(window.searchWindowStart);
-  const windowEnd = Date.parse(window.searchWindowEnd);
   const monthName = MONTH_NAMES[editionParts.month - 1];
   if (!monthName) throw new Error("Kemarin edition month is invalid");
 
   let searchesRun = 0;
   const ledger = skipLedger();
-  const parsed: Array<ParsedHistoricalEvent & { imageUrl?: string }> = [];
+  const parsed: ParsedHistoricalEvent[] = [];
+  const fallbacks: string[] = [];
+  const failures: string[] = [];
 
   const yearSection = await fetchYearMonthWikitext(editionParts.year, monthName, signal);
   searchesRun += yearSection.requests;
   parsed.push(
-    ...parseYearMonthWikitext(
-      yearSection.wikitext,
-      editionParts.year,
-      window.editionDate,
-      windowStart,
-      windowEnd,
-      ledger,
-    ),
+    ...parseYearMonthWikitext(yearSection.wikitext, editionParts.year, window.editionDate, ledger),
   );
+
+  // An edition printed early in the month would otherwise carry no ongoing context
+  // at all, because every crisis still running that morning began the month before.
+  if (editionParts.day <= ONGOING_LOOKBACK_DAYS) {
+    const previous =
+      editionParts.month === 1
+        ? { year: editionParts.year - 1, month: 12 }
+        : { year: editionParts.year, month: editionParts.month - 1 };
+    const previousName = MONTH_NAMES[previous.month - 1];
+    if (previousName) {
+      const previousSection = await fetchYearMonthWikitext(previous.year, previousName, signal);
+      searchesRun += previousSection.requests;
+      parsed.push(
+        ...parseYearMonthWikitext(
+          previousSection.wikitext,
+          previous.year,
+          window.editionDate,
+          ledger,
+        ),
+      );
+    }
+  }
 
   const dayText = await fetchDayPageWikitext(monthName, editionParts.day, signal);
   searchesRun += 1;
-  parsed.push(
-    ...parseOnThisDayPageWikitext(dayText, window.editionDate, windowStart, windowEnd, ledger),
-  );
+  parsed.push(...parseOnThisDayPageWikitext(dayText, window.editionDate, ledger));
 
   for (const kind of ["events", "selected"] as const) {
-    const feed = await wikipediaGet(onThisDayUrl(editionParts.month, editionParts.day, kind), signal);
-    searchesRun += 1;
+    const feed = await fetchOnThisDayFeed(editionParts.month, editionParts.day, kind, signal);
+    searchesRun += feed.requests;
+    if (feed.fallback) fallbacks.push(feed.fallback);
+    if (feed.failure) failures.push(feed.failure);
     parsed.push(
-      ...parseOnThisDayFeed(
-        feed,
-        window.editionDate,
-        windowStart,
-        windowEnd,
-        `wikimedia:${kind}`,
-        ledger,
-      ),
+      ...parseOnThisDayFeed(feed.payload, window.editionDate, `wikimedia:${kind}`, ledger),
     );
   }
 
+  const discovery: Record<string, number> = {};
   const byUrl = new Map<string, HistoricalCandidate>();
 
   for (const event of parsed) {
-    const publishedAt = Date.parse(event.eventDate);
-    if (!Number.isFinite(publishedAt)) {
+    discovery[event.searchQuery] = (discovery[event.searchQuery] ?? 0) + 1;
+    if (!Number.isFinite(Date.parse(event.eventDate))) {
       ledger.withoutTimestamp += 1;
       continue;
     }
     const candidate = toCandidate(event);
     if (!candidate) continue;
     const existing = byUrl.get(candidate.url);
-    if (!existing || betterFit(candidate.windowFit, existing.windowFit)) {
-      byUrl.set(candidate.url, candidate);
-    }
+    byUrl.set(candidate.url, existing ? mergeCandidates(existing, candidate) : candidate);
   }
 
-  const ranked = [...byUrl.values()].sort((left, right) => {
-    const rank = { exact: 0, adjacent: 1, month: 2 };
-    return rank[left.windowFit] - rank[right.windowFit] || left.title.localeCompare(right.title);
-  });
+  // Date fit first, because the sheet exists to print that day; evidence strength
+  // then separates candidates that belong on it equally well.
+  const ranked = [...byUrl.values()].sort(
+    (left, right) =>
+      FIT_RANK[left.windowFit] - FIT_RANK[right.windowFit] ||
+      right.evidenceScore - left.evidenceScore ||
+      left.title.localeCompare(right.title),
+  );
 
   return historicalCandidateResultSchema.parse({
     searchesRun,
@@ -587,6 +747,24 @@ export async function collectHistoricalCandidates(
     publicationDate: window.publicationDate,
     excludedOutsideWindow: ledger.outsideWindow,
     excludedWithoutTimestamp: ledger.withoutTimestamp,
+    diagnostics: {
+      discovery,
+      deduplicated: parsed.length - ranked.length,
+      excludedFuture: ledger.future,
+      excludedTooOld: ledger.tooOld,
+      windowFit: {
+        exact: ranked.filter((item) => item.windowFit === "exact").length,
+        adjacent: ranked.filter((item) => item.windowFit === "adjacent").length,
+        ongoing: ranked.filter((item) => item.windowFit === "ongoing").length,
+      },
+      withContemporaryEvidence: ranked.filter((item) => item.hasContemporaryEvidence).length,
+      withIndependentCorroboration: ranked.filter((item) => item.hasIndependentCorroboration).length,
+      encyclopediaOnly: ranked.filter(
+        (item) => !item.evidence.some((source) => source.sourceType !== "encyclopedia"),
+      ).length,
+      fallbacks,
+      failures,
+    },
     results: ranked,
   });
 }

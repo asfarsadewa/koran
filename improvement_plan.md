@@ -351,17 +351,25 @@ This is maintenance work, not a reason to abandon Wikimedia.
 
 ## 12. Delivery phases
 
-### Phase A — strengthen current Wikimedia pipeline
+### Phase A — strengthen current Wikimedia pipeline — **complete**
 
 Small, low-risk changes:
 
-- replace `month` semantics with `ongoing` where supportable;
-- classify Wikipedia-extracted citations by publication date when metadata can be obtained;
-- mark sources `contemporaneous` vs `retrospective`;
-- include evidence metadata in model output;
-- verify/migrate the On This Day endpoint.
+- ~~replace `month` semantics with `ongoing` where supportable~~ — `exact` / `adjacent` / `ongoing`, classified by calendar distance rather than by the 36-hour instant window;
+- ~~classify Wikipedia-extracted citations by publication date when metadata can be obtained~~ — read from `{{cite}}` date and year parameters, then from the URL path, with Wayback wrappers unwrapped to the original;
+- ~~mark sources `contemporaneous` vs `retrospective`~~ — `contemporary` / `retrospective` / `unknown`, alongside publisher and source type; a bare year is never called contemporary;
+- ~~include evidence metadata in model output~~ — the ledger prints publisher, type and timing per source, plus a per-run diagnostics block;
+- ~~verify/migrate the On This Day endpoint~~ — the portal endpoint still answers; the per-wiki `rest_v1` route is now a fallback and a feed failure no longer aborts the sweep.
+
+Three things were found during the work that the plan did not anticipate:
+
+1. **The pipeline was reporting the future.** A baseline run for the edition of 15 August 1991 returned seventeen candidates, none matching the printed date and thirteen dated after it — the Soviet coup, Ukrainian independence, the Battle of Vukovar. Dropping future-dated events was therefore a correctness fix, not a tightening of editorial taste.
+2. **`ongoing` needs the previous month.** An edition printed early in the month has no ongoing context inside its own month section, so the chronology for the preceding month is now read as well. Two extra requests.
+3. **The `selected` feed had never been parsed.** It answers with a `selected` array rather than `events`, so one of the four discovery surfaces was silently returning nothing. Feed descriptions were also taking the linked article's summary instead of the day's own line.
 
 **Outcome:** current system becomes more honest without adding another provider.
+
+**Still open after Phase A:** many dates yield no `exact` candidate at all, because the Wikipedia day page carries no entry for that year. Recall, not honesty, is now the binding constraint — which is what Phase B is for.
 
 ### Phase B — add GDELT discovery
 
@@ -477,7 +485,7 @@ The interesting part of Juara Merdeka is the editor, not the retrieval stack.
 
 ---
 
-## 16. Suggested first implementation PR after this plan
+## 16. Suggested first implementation PR after this plan — **landed**
 
 Scope one code PR narrowly:
 
