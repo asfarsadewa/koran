@@ -23,7 +23,8 @@
     "deploy:worker": "wrangler deploy",
     "d1:migrate:local": "wrangler d1 migrations apply juara-merdeka --local",
     "d1:migrate:remote": "wrangler d1 migrations apply juara-merdeka --remote",
-    "d1:seed:local": "wrangler d1 execute juara-merdeka --local --file fixtures/demo.sql"
+    "d1:seed:local": "wrangler d1 execute juara-merdeka --local --file fixtures/demo.sql",
+    "gdelt:index": "node scripts/build-gdelt-index.mjs"
   },
   "keywords": [
     "eve",
