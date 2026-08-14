@@ -12,6 +12,12 @@ The target model should be:
 
 > Wikimedia tells us what may have mattered. Independent contemporary or archival sources help establish what was actually known and reported at the time.
 
+## Status
+
+Phases A and B have shipped. Phase B did not ship as written — the spike changed what GDELT could be, and §4 Tier B and §12 Phase B now record why.
+
+**If you are picking this work up cold, read §18 first.** It holds the measured state of the ledger, the one product decision nobody has made yet, and the recommended order of work. The sections between here and there are the original reasoning, which is still sound except where a later section marks it corrected.
+
 ---
 
 ## 1. Preserve the parts that already work
@@ -523,6 +529,80 @@ A successful `/kemarin` v2 should make this statement true:
 > Opening Juara Merdeka on 14 August 2026 should feel less like reading Wikipedia's 2026 recollection of 14 August 1991, and more like opening an intelligently reconstructed newspaper on 14 August 1991 using information people plausibly had at the time.
 
 That is the product identity worth protecting.
+
+---
+
+## 18. Where the work stands, and what to do next
+
+Written after Phases A and B, for whoever picks this up next. Everything below that is stated as a measurement was measured against live Wikimedia and GDELT data, not reasoned about.
+
+### What the ledger looks like now
+
+Three printed dates, sampled after both phases landed:
+
+| Printed date | Candidates | With contemporary evidence | Encyclopedia-only | `exact` |
+|---|---|---|---|---|
+| 1991-08-15 | 12 | 3 | 3 | 0 |
+| 1991-08-03 | 13 | 5 | 2 | 0 |
+| 1991-01-05 | 18 | 3 | 15 | 4 |
+
+Two of the three dates produced **no candidate matching the printed day at all**. Roughly half of what does arrive is not humanitarian in the first place — a cartoon channel, a boxing result, a solar eclipse, the invention of the web — because that is what a year chronology contains.
+
+### The decision nobody has made yet
+
+The sheet requires exactly eight stories. On a typical date only three to five candidates carry contemporary evidence. The instruction added in Phase A — prefer contemporary evidence, avoid historical omniscience — therefore cannot be satisfied on most days. The editor fills the remaining slots from encyclopedia-only material because nothing else exists.
+
+Three ways out:
+
+1. **Find more material.** Phase C. Addressed below.
+2. **Let the Kemarin sheet print fewer than eight on a thin day.** Be warned this is not a small change: `articleSchema` in `shared/edition.ts` requires exactly eight with ranks one through eight, the Chinese edition must match rank for rank, and the layout assumes the count.
+3. **Keep eight and be transparent about thin sourcing** — say plainly in the sheet when a story rests on an encyclopedia alone.
+
+The third is what happens today, by default, because nobody chose. It is a defensible answer but it should be chosen rather than inherited.
+
+### Recommended order
+
+**1. Publish about five editions and read them before building anything else.**
+
+Nothing in this plan is worth more than looking at what the machine now produces. Both phases changed the ledger substantially and no human has read an edition made from it. The schedule already runs daily; `npm run agent:curate:kemarin` triggers one by hand. Read them against the diagnostics block the ledger now carries, and count two things: how many published stories rest on an encyclopedia alone, and how many are genuinely about human suffering rather than merely dated correctly.
+
+§12 Phase E and §15 both say not to build from theory. This is that instruction applied to the plan itself.
+
+**2. Spike NYT against the GDELT gap list. This is the single most informative experiment available.**
+
+Both endpoints are live and reject only on a missing key, so a free developer key is the whole setup cost. Prefer `/svc/archive/v1/{year}/{month}.json`, which returns a month of article metadata in one request, over Article Search — it is the same reduce-once shape that worked for GDELT and it sidesteps per-query rate limits. Check the terms on storage before caching anything.
+
+Run the spike this way round: take the countries GDELT flagged for 15 August 1991 — Burundi, Papua New Guinea, Cameroon, Guatemala, Gaza Strip — and ask whether the NYT archive for that month carries anything on them. That answers the question that decides Phase C's value: does a contemporary newspaper close the blind spots, or does it only deepen coverage where Wikipedia is already strong? One American paper's archive will answer well for the countries its correspondents were posted to, and those may not be these.
+
+If the answer is "it deepens what we have", Phase C is still worth doing for evidence quality, but stop expecting it to fix geographic reach, and say so here.
+
+**3. Fix candidate titles. Small, and worth doing whatever else happens.**
+
+A candidate's title is currently the first wiki link in the bullet rather than the event, which yields entries called `Estonia`, `Prussian King`, `US Boxing` and `Finance Minister of India`. It is the first thing the editor reads and the key deduplication falls back on. See `parseYearMonthWikitext` in `agent/lib/historical-news.ts`.
+
+**4. Leave Phase D alone until step 1 gives it a target.**
+
+Internet Archive is archaeology for specific under-evidenced candidates. There are no identified candidates to chase yet.
+
+**5. Phase E is correctly gated on weeks of real editions.** Do not start it early.
+
+### Sources examined and set aside
+
+**ReliefWeb** would be ideal on subject — humanitarian reporting, institutional sourcing, exactly this paper's beat. Its API now requires a registered appname, and its archive begins around its 1996 launch, so it does not reach the years currently printed. It becomes worth revisiting around 2031, when the 35-year offset catches up to it.
+
+### Maintenance this sheet needs
+
+GDELT is the only year-pinned resource in the pipeline. Wikipedia chronologies, calendar-day pages and the on-this-day feeds are all fetched by year at request time and need nothing.
+
+The conflict index is generated and committed, currently covering 1991 and 1992, which carries the sheet through 2027. When the offset reaches 1993 on 1 January 2028 the index falls behind. Nothing breaks — `conflictPressureFor` returns null, the ledger reports `gdelt:1993 is not in the conflict index` among its failures, and the sheet publishes without coverage pressure — but that note is only ever read by the agent.
+
+The alarm therefore lives in the test suite, in `tests/gdelt-conflict.test.ts`. It fails any build once the sheet is within 120 days of printing a year the index does not hold, and the failure message carries the exact command. It first rings in early September 2027. Rebuild with:
+
+```
+npm run gdelt:index -- 1991 1992 1993
+```
+
+Pass every year you want present; the file is rewritten rather than merged into. The run takes about ten seconds per year and is byte-for-byte reproducible.
 
 ---
 

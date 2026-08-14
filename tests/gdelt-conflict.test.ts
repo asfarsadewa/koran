@@ -8,6 +8,10 @@ import {
   parseConflictDay,
   PRESSURE_RATIO_FLOOR,
 } from "../agent/lib/gdelt-conflict";
+import { buildKemarinPublicationContext } from "../agent/lib/publication-context";
+
+/** Long enough before the printed year turns over to rebuild the index unhurried. */
+const REBUILD_LEAD_DAYS = 120;
 
 describe("conflict index", () => {
   it("decodes the compact day format into named countries", () => {
@@ -27,6 +31,28 @@ describe("conflict index", () => {
     expect(pressure?.map((entry) => entry.country)).toContain("Lebanon");
     // Ranked by anomaly against each country's own year, not by raw volume.
     expect(pressure?.[0]?.ratio).toBeGreaterThan(pressure?.at(-1)?.ratio ?? 0);
+  });
+
+  /**
+   * The printed year advances with the calendar, and the index does not. Nothing
+   * breaks when it falls behind — the ledger reports the gap and the sheet still
+   * publishes — but nobody would see it, because only the agent reads that note at
+   * seven in the morning. So the alarm lives here, where a build has to look at it,
+   * and it rings a season before the sheet actually needs the year.
+   */
+  it("still covers the years this sheet is about to print", () => {
+    const printedYear = (at: Date) => buildKemarinPublicationContext(at).editionDate.slice(0, 4);
+    const required = [
+      printedYear(new Date()),
+      printedYear(new Date(Date.now() + REBUILD_LEAD_DAYS * 86_400_000)),
+    ];
+    const missing = [...new Set(required)].filter((year) => !INDEXED_YEARS.includes(year));
+    const wanted = [...new Set([...INDEXED_YEARS, ...required])].sort();
+
+    expect(
+      missing,
+      `The Kemarin sheet prints ${missing.join(" and ")} within ${REBUILD_LEAD_DAYS} days and the GDELT index stops at ${INDEXED_YEARS.at(-1)}. Rebuild it with: npm run gdelt:index -- ${wanted.join(" ")}`,
+    ).toEqual([]);
   });
 
   it("separates an unindexed year from a quiet day", () => {
