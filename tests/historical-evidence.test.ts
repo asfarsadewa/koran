@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildEvidence,
+  classifyAvailability,
   classifySourceType,
   classifyTiming,
   dateFromUrlPath,
@@ -15,6 +16,7 @@ import {
 } from "../agent/lib/historical-evidence";
 
 const eventDate = "1991-08-13T12:00:00.000Z";
+const editionDate = "1991-08-13";
 
 describe("citation dates", () => {
   it("reads the shapes Wikipedia editors actually write", () => {
@@ -114,12 +116,15 @@ describe("source classification", () => {
       buildEvidence(
         { url: "https://en.wikipedia.org/wiki/Somali_Civil_War", publishedAt: "1991-08-13" },
         eventDate,
+        editionDate,
       ),
     ).toEqual({
       url: "https://en.wikipedia.org/wiki/Somali_Civil_War",
       publisher: "wikipedia.org",
       sourceType: "encyclopedia",
       timing: "retrospective",
+      // No desk of that morning held an encyclopedia written about its own day.
+      availableByEdition: "unavailable",
       publishedAt: "1991-08-13",
     });
   });
@@ -133,12 +138,43 @@ describe("source classification", () => {
     expect(unwrapArchiveUrl("https://www.theguardian.com/world/report")).toBe(
       "https://www.theguardian.com/world/report",
     );
-    expect(buildEvidence({ url: wrapped }, eventDate)).toMatchObject({
+    // The capture is dated 2005; the report it captured is dated 1991, and that is
+    // the date both the timing and the availability are settled on.
+    expect(buildEvidence({ url: wrapped }, eventDate, editionDate)).toMatchObject({
       publisher: "theguardian.com",
       sourceType: "archive",
       timing: "contemporary",
+      availableByEdition: "unavailable",
       publishedAt: "1991-08-14",
     });
+  });
+});
+
+describe("availability at press time", () => {
+  it("separates reporting the desk held from reporting that came a day too late", () => {
+    // The clearest case Finding 3 exists for: genuine contemporary reporting about
+    // the event, filed the morning after this sheet went to press.
+    expect(classifyTiming("1991-08-14", eventDate)).toBe("contemporary");
+    expect(classifyAvailability("1991-08-14", editionDate)).toBe("unavailable");
+
+    // A paper of the printed day is a peer of the sheet being reconstructed: if it
+    // could carry the story that morning, so could this one.
+    expect(classifyAvailability("1991-08-13", editionDate)).toBe("available");
+    expect(classifyAvailability("1991-08-12", editionDate)).toBe("available");
+  });
+
+  it("settles a partial date whenever the whole span falls on one side", () => {
+    expect(classifyAvailability("1991-09", editionDate)).toBe("unavailable");
+    expect(classifyAvailability("1992", editionDate)).toBe("unavailable");
+    expect(classifyAvailability("1991-07", editionDate)).toBe("available");
+    expect(classifyAvailability("1990", editionDate)).toBe("available");
+  });
+
+  it("refuses to settle a span that straddles the printed day", () => {
+    expect(classifyAvailability("1991-08", editionDate)).toBe("unknown");
+    expect(classifyAvailability("1991", editionDate)).toBe("unknown");
+    expect(classifyAvailability(undefined, editionDate)).toBe("unknown");
+    expect(classifyAvailability("sometime", editionDate)).toBe("unknown");
   });
 });
 
@@ -156,18 +192,21 @@ describe("publisher independence", () => {
         publisher: "wikipedia.org",
         sourceType: "encyclopedia",
         timing: "retrospective",
+        availableByEdition: "unavailable",
       },
       {
         url: "https://www.nytimes.com/1991/08/14/world/report.html",
         publisher: "nytimes.com",
         sourceType: "news",
         timing: "contemporary",
+        availableByEdition: "unavailable",
       },
       {
         url: "https://archive.nytimes.com/1991/08/15/world/follow-up.html",
         publisher: "nytimes.com",
         sourceType: "news",
         timing: "contemporary",
+        availableByEdition: "unavailable",
       },
     ];
     expect([...independentPublishers(evidence)]).toEqual(["nytimes.com"]);
@@ -180,6 +219,7 @@ describe("evidence scoring", () => {
     publisher: "wikipedia.org",
     sourceType: "encyclopedia",
     timing: "retrospective",
+    availableByEdition: "unavailable",
   };
 
   const contemporary: HistoricalEvidence = {
@@ -187,7 +227,16 @@ describe("evidence scoring", () => {
     publisher: "nytimes.com",
     sourceType: "news",
     timing: "contemporary",
+    availableByEdition: "unavailable",
     publishedAt: "1991-08-14",
+  };
+
+  const editionTime: HistoricalEvidence = {
+    ...contemporary,
+    url: "https://www.washingtonpost.com/1991/08/13/mogadishu-dispatch.html",
+    publisher: "washingtonpost.com",
+    availableByEdition: "available",
+    publishedAt: "1991-08-13",
   };
 
   it("ranks contemporary reporting above an encyclopedia-only entry", () => {
@@ -206,6 +255,18 @@ describe("evidence scoring", () => {
       description: "Shelling forces more families out of Mogadishu.",
     });
     expect(corroborated).toBeGreaterThan(bare);
+  });
+
+  it("ranks reporting the desk could have held above reporting that arrived later", () => {
+    const base = {
+      independentPublishers: 1,
+      discoveredBy: ["wikipedia:year-chronology"],
+      title: "Somali Civil War",
+      description: "Shelling forces more families out of Mogadishu.",
+    };
+    expect(scoreCandidate({ ...base, evidence: [encyclopedia, editionTime] })).toBeGreaterThan(
+      scoreCandidate({ ...base, evidence: [encyclopedia, contemporary] }),
+    );
   });
 
   it("says nothing about the date, which the ledger orders separately", () => {
@@ -267,6 +328,7 @@ describe("evidence scoring", () => {
           publisher: "reliefweb.int",
           sourceType: "institution",
           timing: "contemporary",
+          availableByEdition: "unknown",
         },
       ],
     });

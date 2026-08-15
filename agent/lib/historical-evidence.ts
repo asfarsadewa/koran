@@ -33,11 +33,20 @@ export const EVIDENCE_SOURCE_TYPES = [
  */
 export const EVIDENCE_TIMINGS = ["contemporary", "retrospective", "unknown"] as const;
 
+/**
+ * Whether the desk producing the printed edition could have held this source, which
+ * is a different question from whether the source reports the event as it happened.
+ * A dispatch filed the day after the sheet went to press is contemporary reporting
+ * and still not something its editor had.
+ */
+export const EVIDENCE_AVAILABILITY = ["available", "unavailable", "unknown"] as const;
+
 export const historicalEvidenceSchema = z.object({
   url: z.string().url(),
   publisher: z.string(),
   sourceType: z.enum(EVIDENCE_SOURCE_TYPES),
   timing: z.enum(EVIDENCE_TIMINGS),
+  availableByEdition: z.enum(EVIDENCE_AVAILABILITY),
   publishedAt: z.string().optional(),
 });
 
@@ -258,7 +267,31 @@ export function classifyTiming(
   return range.start >= event - CONTEMPORARY_BEFORE_DAYS * DAY_MS ? "contemporary" : "unknown";
 }
 
-export function buildEvidence(citation: ParsedCitation, eventDate: string): HistoricalEvidence {
+/**
+ * Compares the source against the printed day rather than against the event. The
+ * comparison is made on the whole span a partial date covers, so `1991-09` is
+ * settled as unavailable to a sheet printed in August while a bare `1991` straddles
+ * the cutoff and stays unknown.
+ */
+export function classifyAvailability(
+  publishedAt: string | undefined,
+  editionDate: string,
+): HistoricalEvidence["availableByEdition"] {
+  const editionParts = parseIsoDate(editionDate.slice(0, 10));
+  if (!publishedAt || !editionParts) return "unknown";
+  const range = dateRange(publishedAt);
+  if (!range) return "unknown";
+  const cutoff = Date.UTC(editionParts.year, editionParts.month - 1, editionParts.day);
+  if (range.end <= cutoff) return "available";
+  if (range.start > cutoff) return "unavailable";
+  return "unknown";
+}
+
+export function buildEvidence(
+  citation: ParsedCitation,
+  eventDate: string,
+  editionDate: string,
+): HistoricalEvidence {
   const sourceType = classifySourceType(citation.url);
   const original = unwrapArchiveUrl(citation.url);
   let publisher: string;
@@ -268,14 +301,28 @@ export function buildEvidence(citation: ParsedCitation, eventDate: string): Hist
     publisher = "unknown";
   }
   const publishedAt = citation.publishedAt ?? dateFromUrlPath(citation.url);
+  // An encyclopedia article is written about the event, never from inside it, and
+  // no desk of that morning could have held it whatever date the citation carries.
+  const encyclopedia = sourceType === "encyclopedia";
   return {
     url: citation.url,
     publisher,
     sourceType,
-    // An encyclopedia article is written about the event, never from inside it.
-    timing: sourceType === "encyclopedia" ? "retrospective" : classifyTiming(publishedAt, eventDate),
+    timing: encyclopedia ? "retrospective" : classifyTiming(publishedAt, eventDate),
+    availableByEdition: encyclopedia ? "unavailable" : classifyAvailability(publishedAt, editionDate),
     ...(publishedAt ? { publishedAt } : {}),
   };
+}
+
+/**
+ * Reporting from the event's own week that the printing desk could also have held.
+ * This is the strongest support a reconstructed story can carry, and the only kind
+ * that may introduce a fact the sheet prints as its own.
+ */
+export function hasEditionTimeEvidence(evidence: HistoricalEvidence[]): boolean {
+  return evidence.some(
+    (item) => item.timing === "contemporary" && item.availableByEdition === "available",
+  );
 }
 
 /** Publishers behind the evidence that are neither the encyclopedia nor its own host. */
@@ -316,6 +363,9 @@ export function scoreCandidate(input: ScoreInput): number {
   const hasRetrospective = input.evidence.some((item) => item.timing === "retrospective");
   let score = 0;
   if (hasContemporary) score += 25;
+  // Reporting the desk could actually have held is worth more than reporting that
+  // merely belongs to the same week, so the two bonuses stack rather than replace.
+  if (hasEditionTimeEvidence(input.evidence)) score += 10;
   if (input.independentPublishers >= 1) score += 15;
   if (input.independentPublishers >= 2) score += 10;
   if (input.evidence.some((item) => item.sourceType === "institution")) score += 10;
