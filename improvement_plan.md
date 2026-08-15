@@ -626,11 +626,27 @@ Instruction 7 now says what the pair is for. Contemporary-but-unavailable eviden
 
 **Two counters that were being read as one.** `excludedFuture` counted every calendar-day-page and on-this-day-feed entry from a later year, and those pages carry every year that ever used the date. A 1991 edition rejected roughly thirty post-1991 bullets on every run, and the ledger printed the total as events that happened after the print date — which reads as *the day was busy and we held the line* and means *the page covers other centuries*. Other-year rejections are now counted and reported separately, so `excludedFuture` says what it always claimed to.
 
-### Still open after this
+---
 
-The evidence fields describe a supply that is thinner than it looks, and for a reason that has nothing to do with the events. Feed-discovered candidates arrive with no citations at all, and nothing in the pipeline fetches the references off a linked article — `extractCitations` only ever sees the chronology or day-page bullet. So a candidate from `wikimedia:events` or `wikimedia:selected` carries exactly one piece of evidence, its own Wikipedia URL, and is counted in `encyclopediaOnly`.
+## 20. Reading the article's own references — **landed**
 
-That number therefore measures which sweep found an event, not how well the event is sourced. A disaster with forty references on its article reports as encyclopedia-only, and instruction 7 tells the agent to prefer candidates that clear a bar those surfaces cannot clear. Worth fixing before Phase C, or the spike measures its provider against a baseline that is partly an artefact of what we bothered to fetch.
+The same review found a fourth label of the same kind, and a larger one, because it was not a misnomer but a measurement of the wrong thing.
+
+Feed-discovered candidates arrived with no citations at all. The on-this-day feeds answer with an article summary and never a reference list, and nothing in the pipeline went back for one — `extractCitations` only ever saw a chronology or day-page bullet. So every candidate from `wikimedia:events` and `wikimedia:selected` carried exactly one piece of evidence, its own Wikipedia URL, and landed in `encyclopediaOnly`.
+
+That number was therefore measuring which sweep found an event rather than how well the event is recorded. A disaster with forty references on its page read exactly like one with none. Meanwhile instruction 7 told the agent to prefer candidates carrying contemporary evidence and an independent publisher — a bar those surfaces could not clear no matter what the archive held.
+
+Candidates resting on an encyclopedia alone are now sent back to Wikipedia once each for the article's own wikitext, capped at twelve requests a run. What comes back is filtered hard: only citations dating to the event's own weeks are kept, because an article covers its whole topic and most of its references belong to other years of the same war. Four per article at most.
+
+Even the survivors are not treated as equals of a bullet citation. A citation a Wikipedia editor attached to the chronology line for that day is pinned to the event; one lifted off the topic page is only dated near it, and could belong to a different incident in the same conflict. Evidence carries `attachedTo`, either `event-line` or `article`, and the agent is told to check an article-attached source before resting a figure or a cause on it.
+
+The score deliberately does not move on attachment. Weighting it would be inventing a discount from theory, which §15 says not to do; the fact is recorded, the desk weighs it, and a real edition can settle the number later if it needs one.
+
+The cap is reported rather than silent: the ledger prints how many candidates were eligible, how many were read, and how many gained a source, and says plainly that anything left over is unexamined rather than unsupported.
+
+### What this changes about Phase C
+
+The Phase C spike asks whether a contemporary newspaper improves recall and evidence. Before this, the evidence half of that question would have been measured against a baseline that was partly an artefact of what the pipeline bothered to fetch. It is now measured against what Wikipedia actually holds.
 
 ---
 

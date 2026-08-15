@@ -41,12 +41,22 @@ export const EVIDENCE_TIMINGS = ["contemporary", "retrospective", "unknown"] as 
  */
 export const EVIDENCE_AVAILABILITY = ["available", "unavailable", "unknown"] as const;
 
+/**
+ * Where the citation was found. `event-line` means a Wikipedia editor attached it to
+ * the chronology line for that day, which pins it to the event. `article` means it
+ * was taken off the topic's own reference list and kept only because its date falls
+ * in the event's weeks — near enough to be worth reading, not proof it is about this
+ * incident rather than another one in the same war.
+ */
+export const EVIDENCE_ATTACHMENTS = ["event-line", "article"] as const;
+
 export const historicalEvidenceSchema = z.object({
   url: z.string().url(),
   publisher: z.string(),
   sourceType: z.enum(EVIDENCE_SOURCE_TYPES),
   timing: z.enum(EVIDENCE_TIMINGS),
   availableByEdition: z.enum(EVIDENCE_AVAILABILITY),
+  attachedTo: z.enum(EVIDENCE_ATTACHMENTS),
   publishedAt: z.string().optional(),
 });
 
@@ -291,6 +301,7 @@ export function buildEvidence(
   citation: ParsedCitation,
   eventDate: string,
   editionDate: string,
+  attachedTo: HistoricalEvidence["attachedTo"] = "event-line",
 ): HistoricalEvidence {
   const sourceType = classifySourceType(citation.url);
   const original = unwrapArchiveUrl(citation.url);
@@ -310,6 +321,7 @@ export function buildEvidence(
     sourceType,
     timing: encyclopedia ? "retrospective" : classifyTiming(publishedAt, eventDate),
     availableByEdition: encyclopedia ? "unavailable" : classifyAvailability(publishedAt, editionDate),
+    attachedTo,
     ...(publishedAt ? { publishedAt } : {}),
   };
 }
@@ -366,6 +378,9 @@ export function scoreCandidate(input: ScoreInput): number {
   // Reporting the desk could actually have held is worth more than reporting that
   // merely belongs to the same week, so the two bonuses stack rather than replace.
   if (hasEditionTimeEvidence(input.evidence)) score += 10;
+  // Where the citation was attached deliberately does not move the score. It is
+  // recorded on each source and left for the desk to weigh, because no published
+  // edition has yet shown what the discount should be.
   if (input.independentPublishers >= 1) score += 15;
   if (input.independentPublishers >= 2) score += 10;
   if (input.evidence.some((item) => item.sourceType === "institution")) score += 10;

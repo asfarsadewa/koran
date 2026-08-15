@@ -18,6 +18,7 @@ import {
 } from "./gdelt-conflict";
 import {
   buildEvidence,
+  classifyTiming,
   extractCitations,
   hasEditionTimeEvidence,
   historicalEvidenceSchema,
@@ -40,6 +41,7 @@ import { EDITORIAL_WINDOW_MS } from "./publication-context";
 // collector do not have to know which module each half lives in.
 export { HISTORICAL_WINDOW_FITS, type HistoricalWindowFit } from "./historical-window";
 export {
+  EVIDENCE_ATTACHMENTS,
   EVIDENCE_AVAILABILITY,
   EVIDENCE_SOURCE_TYPES,
   EVIDENCE_TIMINGS,
@@ -106,6 +108,11 @@ export const historicalDiagnosticsSchema = z.object({
   withEditionTimeEvidence: z.number().int().nonnegative(),
   withIndependentCorroboration: z.number().int().nonnegative(),
   encyclopediaOnly: z.number().int().nonnegative(),
+  articleEnrichment: z.object({
+    eligible: z.number().int().nonnegative(),
+    attempted: z.number().int().nonnegative(),
+    enriched: z.number().int().nonnegative(),
+  }),
   conflictPressure: z.array(
     z.object({
       code: z.string(),
@@ -194,6 +201,20 @@ export function wikipediaArticleUrl(title: string): string | null {
   const trimmed = title.replace(/_/gu, " ").trim();
   if (!trimmed || FILE_OR_CATEGORY.test(trimmed)) return null;
   return `https://en.wikipedia.org/wiki/${encodeURIComponent(trimmed).replace(/%20/gu, "_")}`;
+}
+
+/** The inverse, so a candidate discovered as a URL can be sent back for its references. */
+export function wikipediaTitleFromUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.hostname.replace(/^www\./u, "") !== "en.wikipedia.org") return null;
+    const path = /^\/wiki\/(.+)$/u.exec(url.pathname)?.[1];
+    if (!path) return null;
+    const title = decodeURIComponent(path).replace(/_/gu, " ").trim();
+    return title && !FILE_OR_CATEGORY.test(title) ? title : null;
+  } catch {
+    return null;
+  }
 }
 
 export function extractWikiTitles(markup: string): string[] {
@@ -560,6 +581,13 @@ export async function fetchDayPageWikitext(
   return text(record(body?.parse)?.wikitext) ?? "";
 }
 
+export async function fetchArticleWikitext(title: string, signal?: AbortSignal): Promise<string> {
+  const body = record(
+    await wikipediaGet(wikiApiUrl({ action: "parse", page: title, prop: "wikitext" }), signal),
+  );
+  return text(record(body?.parse)?.wikitext) ?? "";
+}
+
 /**
  * The Wikimedia API Portal is migrating, so the feed is read through the portal
  * host first and the equivalent per-wiki REST route second. Both answer with the
@@ -621,6 +649,40 @@ export async function fetchOnThisDayFeed(
 /* -------------------------------------------------------------------------- */
 /* Collection                                                                 */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * A candidate found through the on-this-day feeds arrives carrying no citations at
+ * all, because the feed answers with an article summary and never its references.
+ * Left alone it reports as resting on an encyclopedia, which measures which sweep
+ * found the event rather than how well the event is recorded — a disaster with forty
+ * references on its page reads exactly like one with none. Those candidates are sent
+ * back to Wikipedia once each for the article's own reference list.
+ */
+export const MAX_ARTICLE_ENRICHMENTS = 12;
+
+/** How many harvested citations a single article may contribute. */
+const ARTICLE_CITATION_LIMIT = 4;
+
+/**
+ * An article covers its whole topic, so most of its references belong to other years
+ * of the same war. Only reporting dated to the event's own weeks is kept, and even
+ * that is marked as taken from the article rather than pinned to the day: near enough
+ * to be worth reading, not proof it describes this incident.
+ */
+export function contemporaryArticleCitations(
+  markup: string,
+  eventDate: string,
+  known: Iterable<string>,
+): ParsedCitation[] {
+  const seen = new Set(known);
+  return extractCitations(markup)
+    .filter(
+      (citation) =>
+        !seen.has(citation.url) &&
+        classifyTiming(citation.publishedAt, eventDate) === "contemporary",
+    )
+    .slice(0, ARTICLE_CITATION_LIMIT);
+}
 
 type EvidenceSummary = Pick<
   HistoricalCandidate,
@@ -698,6 +760,22 @@ const FIT_RANK: Record<HistoricalWindowFit, number> = {
   ongoing: 2,
   recent: 3,
 };
+
+/**
+ * Date fit first, because the sheet exists to print that day; evidence strength then
+ * separates candidates that belong on it equally well.
+ */
+function byFitThenScore(left: HistoricalCandidate, right: HistoricalCandidate): number {
+  return (
+    FIT_RANK[left.windowFit] - FIT_RANK[right.windowFit] ||
+    right.evidenceScore - left.evidenceScore ||
+    left.title.localeCompare(right.title)
+  );
+}
+
+function restsOnEncyclopediaAlone(candidate: HistoricalCandidate): boolean {
+  return !candidate.evidence.some((item) => item.sourceType !== "encyclopedia");
+}
 
 /** One event reached by two surfaces is one candidate carrying both sets of evidence. */
 function mergeCandidates(
@@ -808,14 +886,45 @@ export async function collectHistoricalCandidates(
     );
   }
 
-  // Date fit first, because the sheet exists to print that day; evidence strength
-  // then separates candidates that belong on it equally well.
-  const ranked = [...byUrl.values()].sort(
-    (left, right) =>
-      FIT_RANK[left.windowFit] - FIT_RANK[right.windowFit] ||
-      right.evidenceScore - left.evidenceScore ||
-      left.title.localeCompare(right.title),
-  );
+  // Fit cannot change here, and it is the primary sort key, so choosing whom to
+  // enrich by the current order is safe even though enrichment moves the scores.
+  const eligible = [...byUrl.values()].filter(restsOnEncyclopediaAlone).sort(byFitThenScore);
+  const targets = eligible.slice(0, MAX_ARTICLE_ENRICHMENTS);
+  let enrichedFromArticle = 0;
+
+  for (const candidate of targets) {
+    const title = wikipediaTitleFromUrl(candidate.url);
+    if (!title) continue;
+    searchesRun += 1;
+    let markup: string;
+    try {
+      markup = await fetchArticleWikitext(title, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      failures.push(`wikipedia:${title} ${(error as Error).message}`);
+      continue;
+    }
+    const citations = contemporaryArticleCitations(
+      markup,
+      candidate.publishedAt,
+      candidate.evidence.map((item) => item.url),
+    );
+    if (!citations.length) continue;
+    const evidence = [
+      ...candidate.evidence,
+      ...citations.map((citation) =>
+        buildEvidence(citation, candidate.publishedAt, window.editionDate, "article"),
+      ),
+    ];
+    byUrl.set(candidate.url, {
+      ...candidate,
+      evidence,
+      ...summariseEvidence(evidence, candidate, pressure),
+    });
+    enrichedFromArticle += 1;
+  }
+
+  const ranked = [...byUrl.values()].sort(byFitThenScore);
 
   return historicalCandidateResultSchema.parse({
     searchesRun,
@@ -840,9 +949,12 @@ export async function collectHistoricalCandidates(
       withContemporaryEvidence: ranked.filter((item) => item.hasContemporaryEvidence).length,
       withEditionTimeEvidence: ranked.filter((item) => item.hasEditionTimeEvidence).length,
       withIndependentCorroboration: ranked.filter((item) => item.hasIndependentCorroboration).length,
-      encyclopediaOnly: ranked.filter(
-        (item) => !item.evidence.some((source) => source.sourceType !== "encyclopedia"),
-      ).length,
+      encyclopediaOnly: ranked.filter(restsOnEncyclopediaAlone).length,
+      articleEnrichment: {
+        eligible: eligible.length,
+        attempted: targets.length,
+        enriched: enrichedFromArticle,
+      },
       conflictPressure: markCoverage(
         pressure,
         ranked.map((item) => `${item.title} ${item.description}`),

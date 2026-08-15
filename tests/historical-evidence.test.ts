@@ -125,6 +125,7 @@ describe("source classification", () => {
       timing: "retrospective",
       // No desk of that morning held an encyclopedia written about its own day.
       availableByEdition: "unavailable",
+      attachedTo: "event-line",
       publishedAt: "1991-08-13",
     });
   });
@@ -145,6 +146,7 @@ describe("source classification", () => {
       sourceType: "archive",
       timing: "contemporary",
       availableByEdition: "unavailable",
+      attachedTo: "event-line",
       publishedAt: "1991-08-14",
     });
   });
@@ -193,6 +195,7 @@ describe("publisher independence", () => {
         sourceType: "encyclopedia",
         timing: "retrospective",
         availableByEdition: "unavailable",
+        attachedTo: "event-line",
       },
       {
         url: "https://www.nytimes.com/1991/08/14/world/report.html",
@@ -200,6 +203,7 @@ describe("publisher independence", () => {
         sourceType: "news",
         timing: "contemporary",
         availableByEdition: "unavailable",
+        attachedTo: "event-line",
       },
       {
         url: "https://archive.nytimes.com/1991/08/15/world/follow-up.html",
@@ -207,6 +211,7 @@ describe("publisher independence", () => {
         sourceType: "news",
         timing: "contemporary",
         availableByEdition: "unavailable",
+        attachedTo: "event-line",
       },
     ];
     expect([...independentPublishers(evidence)]).toEqual(["nytimes.com"]);
@@ -220,6 +225,7 @@ describe("evidence scoring", () => {
     sourceType: "encyclopedia",
     timing: "retrospective",
     availableByEdition: "unavailable",
+    attachedTo: "event-line",
   };
 
   const contemporary: HistoricalEvidence = {
@@ -228,6 +234,7 @@ describe("evidence scoring", () => {
     sourceType: "news",
     timing: "contemporary",
     availableByEdition: "unavailable",
+    attachedTo: "event-line",
     publishedAt: "1991-08-14",
   };
 
@@ -236,6 +243,7 @@ describe("evidence scoring", () => {
     url: "https://www.washingtonpost.com/1991/08/13/mogadishu-dispatch.html",
     publisher: "washingtonpost.com",
     availableByEdition: "available",
+    attachedTo: "event-line",
     publishedAt: "1991-08-13",
   };
 
@@ -329,6 +337,7 @@ describe("evidence scoring", () => {
           sourceType: "institution",
           timing: "contemporary",
           availableByEdition: "unknown",
+          attachedTo: "event-line",
         },
       ],
     });

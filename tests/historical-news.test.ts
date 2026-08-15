@@ -221,8 +221,15 @@ describe("collectHistoricalCandidates", () => {
   it("runs the archive sweep, deduplicates URLs and records both discovery surfaces", async () => {
     const result = await runCollector(archiveFetchMock());
 
-    // Two month sections, the calendar-day page, and both on-this-day feeds.
-    expect(result.searchesRun).toBe(7);
+    // Two month sections, the calendar-day page, both on-this-day feeds, and one
+    // request back to each of the four candidates resting on an encyclopedia alone.
+    expect(result.searchesRun).toBe(11);
+    expect(result.diagnostics.articleEnrichment).toEqual({
+      eligible: 4,
+      attempted: 4,
+      // These fixture articles answer with nothing, so none of them gains a source.
+      enriched: 0,
+    });
     expect(result.editionDate).toBe("1991-08-13");
 
     const somalia = result.results.find((item) => item.url.includes("Somali_Civil_War"));
@@ -244,6 +251,44 @@ describe("collectHistoricalCandidates", () => {
     expect(result.diagnostics.withContemporaryEvidence).toBe(1);
     expect(result.diagnostics.withEditionTimeEvidence).toBe(0);
     expect(result.diagnostics.encyclopediaOnly).toBe(result.results.length - 1);
+  });
+
+  it("reads the article's own references for a candidate the sweep left bare", async () => {
+    const result = await runCollector(
+      archiveFetchMock((href) =>
+        href.includes("page=Siege+of+Dubrovnik")
+          ? Response.json({
+              parse: {
+                wikitext: [
+                  "The shelling began in the autumn of 1991.",
+                  "{{cite news|url=https://www.theguardian.com/1991/08/12/dubrovnik-shelling.html|date=August 12, 1991}}",
+                  "{{cite news|url=https://www.nytimes.com/2011/03/04/world/dubrovnik-verdict.html|date=March 4, 2011}}",
+                ].join("\n"),
+              },
+            })
+          : null,
+      ),
+    );
+
+    expect(result.diagnostics.articleEnrichment).toEqual({
+      eligible: 4,
+      attempted: 4,
+      enriched: 1,
+    });
+
+    const dubrovnik = result.results.find((item) => item.url.includes("Siege_of_Dubrovnik"));
+    expect(
+      dubrovnik?.evidence.map((item) => [item.publisher, item.timing, item.attachedTo]),
+    ).toEqual([
+      ["wikipedia.org", "retrospective", "event-line"],
+      // The 2011 verdict is on the same page and is not reporting from that week.
+      ["theguardian.com", "contemporary", "article"],
+    ]);
+    expect(dubrovnik?.hasEditionTimeEvidence).toBe(true);
+    expect(dubrovnik?.hasIndependentCorroboration).toBe(true);
+    // The count now says how thinly the events are recorded rather than which sweep
+    // happened to find them.
+    expect(result.diagnostics.encyclopediaOnly).toBe(3);
   });
 
   it("never lets a candidate dated after the printed day reach the ledger", async () => {
