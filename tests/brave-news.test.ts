@@ -16,7 +16,7 @@ function braveResponse(overrides: Record<string, unknown> = {}): Response {
       query: { original: "humanitarian crisis", more_results_available: true },
       results: [
         {
-          title: "Aid &amp; access <strong>narrows</strong>",
+          title: "&lt;strong&gt;Aid&lt;/strong&gt; &amp; access <strong>narrows</strong>",
           url: "https://news.example/world/report-on-humanitarian-access",
           description: "Relief agencies report <em>serious</em> shortages.",
           age: "2 hours ago",

@@ -58,6 +58,7 @@ export function isLikelyDirectArticleUrl(value: string): boolean {
 }
 
 const WIKIPEDIA_HOST = /(?:^|\.)wikipedia\.org$/iu;
+const BRITANNICA_HOST = /(?:^|\.)britannica\.com$/iu;
 const WIKIPEDIA_FORBIDDEN_TITLE =
   /^(?:Special:|Wikipedia:|File:|Help:|Template:|Talk:|Portal:|Category:|User:|Draft:|Main_Page$)/iu;
 
@@ -76,7 +77,7 @@ export function isLikelyHistoricalSourceUrl(value: string): boolean {
 
     if (isLikelyDirectArticleUrl(value)) return true;
 
-    if (host.endsWith("britannica.com")) {
+    if (BRITANNICA_HOST.test(host)) {
       return segments.length >= 2 && segments[0] === "topic";
     }
 

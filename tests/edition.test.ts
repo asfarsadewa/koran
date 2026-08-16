@@ -168,6 +168,7 @@ describe("isLikelyHistoricalSourceUrl", () => {
     "https://en.wikipedia.org/wiki/Gulf_War",
     "https://en.wikipedia.org/wiki/1991_Soviet_coup_d%27%C3%A9tat_attempt",
     "https://www.britannica.com/topic/Soviet-Coup-of-1991",
+    "https://www.britannica.com/topic/war",
     "https://www.nytimes.com/1991/08/19/world/report-on-moscow-coup.html",
     "https://web.archive.org/web/19910819120000/https://www.nytimes.com/1991/08/19/world/moscow-coup-report.html",
   ])("accepts historical source %s", (url) => {
@@ -178,6 +179,8 @@ describe("isLikelyHistoricalSourceUrl", () => {
     "https://en.wikipedia.org/wiki/Special:Search",
     "https://en.wikipedia.org/wiki/Main_Page",
     "https://www.britannica.com/",
+    "https://notbritannica.com/topic/war",
+    "https://britannica.com.evil.example/topic/war",
     "http://en.wikipedia.org/wiki/Gulf_War",
   ])("rejects non-source %s", (url) => {
     expect(isLikelyHistoricalSourceUrl(url)).toBe(false);

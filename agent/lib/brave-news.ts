@@ -101,12 +101,12 @@ function text(value: unknown): string | null {
 function cleanSnippet(value: unknown, maxLength: number): string {
   const raw = text(value) ?? "";
   return raw
-    .replace(/<[^>]+>/gu, " ")
-    .replace(/&amp;/gu, "&")
     .replace(/&quot;/gu, '"')
     .replace(/&#39;|&apos;/gu, "'")
     .replace(/&lt;/gu, "<")
     .replace(/&gt;/gu, ">")
+    .replace(/&amp;/gu, "&")
+    .replace(/<[^>]+>/gu, " ")
     .replace(/\s+/gu, " ")
     .trim()
     .slice(0, maxLength);

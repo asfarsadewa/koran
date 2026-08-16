@@ -181,17 +181,19 @@ function text(value: unknown): string | null {
 export function cleanWikiText(value: string, maxLength = 600): string {
   return value
     .replace(/\{\{[^}]*\}\}/gu, " ")
-    .replace(/<ref\b[^>]*>[\s\S]*?<\/ref>/giu, " ")
-    .replace(/<ref\b[^>]*\/>/giu, " ")
     .replace(/\[\[[^\]|]+\|([^\]]+)\]\]/gu, "$1")
     .replace(/\[\[([^\]]+)\]\]/gu, "$1")
     .replace(/\[https?:\/\/\S+\s+([^\]]+)\]/gu, "$1")
     .replace(/'{2,}/gu, "")
-    .replace(/<[^>]+>/gu, " ")
-    .replace(/&amp;/gu, "&")
     .replace(/&nbsp;/gu, " ")
     .replace(/&quot;/gu, '"')
     .replace(/&#39;|&apos;/gu, "'")
+    .replace(/&lt;/gu, "<")
+    .replace(/&gt;/gu, ">")
+    .replace(/&amp;/gu, "&")
+    .replace(/<ref\b[^>]*>[\s\S]*?<\/ref>/giu, " ")
+    .replace(/<ref\b[^>]*\/>/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
     .replace(/\s+/gu, " ")
     .trim()
     .slice(0, maxLength);

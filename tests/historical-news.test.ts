@@ -45,6 +45,9 @@ describe("historical markup parsing", () => {
     expect(cleanWikiText("[[Somali Civil War|fighting]] in ''Mogadishu''")).toBe(
       "fighting in Mogadishu",
     );
+    expect(cleanWikiText("&lt;strong&gt;Encoded&lt;/strong&gt; <em>markup</em>")).toBe(
+      "Encoded markup",
+    );
     expect(wikipediaArticleUrl("Gulf War")).toBe("https://en.wikipedia.org/wiki/Gulf_War");
     expect(wikipediaArticleUrl("File:Map.png")).toBeNull();
   });
@@ -383,7 +386,9 @@ describe("collectHistoricalCandidates", () => {
       archiveFetchMock((href) => {
         if (!href.includes("/onthisday/")) return null;
         seen.push(href);
-        if (href.includes("api.wikimedia.org")) return new Response(null, { status: 404 });
+        if (new URL(href).hostname === "api.wikimedia.org") {
+          return new Response(null, { status: 404 });
+        }
         if (href.includes("rest_v1/feed/onthisday/events")) {
           return Response.json({
             events: [
@@ -407,7 +412,7 @@ describe("collectHistoricalCandidates", () => {
       }),
     );
 
-    expect(seen.filter((href) => href.includes("api.wikimedia.org"))).toHaveLength(2);
+    expect(seen.filter((href) => new URL(href).hostname === "api.wikimedia.org")).toHaveLength(2);
     expect(result.diagnostics.fallbacks).toEqual([
       "events:en.wikipedia.org/api/rest_v1",
       "selected:en.wikipedia.org/api/rest_v1",
