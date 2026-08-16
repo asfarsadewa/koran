@@ -54,15 +54,35 @@ describe("historical markup parsing", () => {
     const events = parseYearMonthWikitext(augustWikitext, 1991, window.editionDate, ledger);
 
     expect(events.map((event) => [event.windowFit, event.dayOffset, event.title])).toEqual([
-      ["ongoing", -9, "MTS Oceanos"],
+      // The sinking is over; only the shelling of Dubrovnik carries a range that
+      // was still open on the printed morning.
+      ["recent", -9, "MTS Oceanos"],
       ["ongoing", -3, "Siege of Dubrovnik"],
       ["adjacent", -2, "Nickelodeon"],
       ["exact", 0, "Somali Civil War"],
-      ["adjacent", 1, "Cyclone Ruth"],
     ]);
-    // Hurricane Bob on the 17th and the coup on the 19th had not happened yet.
-    expect(ledger.future).toBe(2);
+    // Cyclone Ruth on the 14th, Hurricane Bob on the 17th and the coup on the 19th
+    // had all not happened yet when the presses ran.
+    expect(ledger.future).toBe(3);
     expect(ledger.tooOld).toBe(0);
+  });
+
+  it("reads a range that closes in a later month rather than running it backwards", () => {
+    const events = parseYearMonthWikitext(
+      "* [[August 30]]–[[September 2|2]] – [[Typhoon Example]] keeps the delta flooded for four days.",
+      1991,
+      "1991-09-01",
+    );
+    expect(events.map((event) => [event.windowFit, event.dayOffset])).toEqual([["ongoing", -2]]);
+  });
+
+  it("reads a range that closes in the next year", () => {
+    const events = parseYearMonthWikitext(
+      "* [[December 30]]–[[January 2|2]] – [[Example Famine]] leaves the camps without grain.",
+      1991,
+      "1992-01-01",
+    );
+    expect(events.map((event) => [event.windowFit, event.dayOffset])).toEqual([["ongoing", -2]]);
   });
 
   it("carries the citation and its date through to the candidate", () => {
@@ -80,9 +100,9 @@ describe("historical markup parsing", () => {
     const events = parseYearMonthWikitext(julyWikitext, 1991, window.editionDate, ledger);
 
     expect(events.map((event) => [event.windowFit, event.dayOffset, event.title])).toEqual([
-      ["ongoing", -19, "Yugoslav Wars"],
+      ["recent", -19, "Yugoslav Wars"],
     ]);
-    // The 5 July collapse is 39 days back, past the ongoing lookback.
+    // The 5 July collapse is 39 days back, past the recent lookback.
     expect(ledger.tooOld).toBe(1);
   });
 
@@ -201,8 +221,15 @@ describe("collectHistoricalCandidates", () => {
   it("runs the archive sweep, deduplicates URLs and records both discovery surfaces", async () => {
     const result = await runCollector(archiveFetchMock());
 
-    // Two month sections, the calendar-day page, and both on-this-day feeds.
-    expect(result.searchesRun).toBe(7);
+    // Two month sections, the calendar-day page, both on-this-day feeds, and one
+    // request back to each of the four candidates resting on an encyclopedia alone.
+    expect(result.searchesRun).toBe(11);
+    expect(result.diagnostics.articleEnrichment).toEqual({
+      eligible: 4,
+      attempted: 4,
+      // These fixture articles answer with nothing, so none of them gains a source.
+      enriched: 0,
+    });
     expect(result.editionDate).toBe("1991-08-13");
 
     const somalia = result.results.find((item) => item.url.includes("Somali_Civil_War"));
@@ -210,14 +237,58 @@ describe("collectHistoricalCandidates", () => {
     expect(somalia?.discoveredBy).toEqual(["wikipedia:year-chronology", "wikipedia:day-page"]);
     expect(somalia?.hasContemporaryEvidence).toBe(true);
     expect(somalia?.hasIndependentCorroboration).toBe(true);
-    expect(somalia?.evidence.map((item) => [item.sourceType, item.timing])).toEqual([
-      ["encyclopedia", "retrospective"],
-      ["news", "contemporary"],
+    expect(
+      somalia?.evidence.map((item) => [item.sourceType, item.timing, item.availableByEdition]),
+    ).toEqual([
+      ["encyclopedia", "retrospective", "unavailable"],
+      // Reporting from the event's own week, filed the morning after this sheet
+      // went to press. It corroborates the event; it cannot furnish its facts.
+      ["news", "contemporary", "unavailable"],
     ]);
+    expect(somalia?.hasEditionTimeEvidence).toBe(false);
     // Best dated fit, corroborated by a dispatch from that week: top of the ledger.
     expect(result.results[0]).toBe(somalia);
     expect(result.diagnostics.withContemporaryEvidence).toBe(1);
+    expect(result.diagnostics.withEditionTimeEvidence).toBe(0);
     expect(result.diagnostics.encyclopediaOnly).toBe(result.results.length - 1);
+  });
+
+  it("reads the article's own references for a candidate the sweep left bare", async () => {
+    const result = await runCollector(
+      archiveFetchMock((href) =>
+        href.includes("page=Siege+of+Dubrovnik")
+          ? Response.json({
+              parse: {
+                wikitext: [
+                  "The shelling began in the autumn of 1991.",
+                  "{{cite news|url=https://www.theguardian.com/1991/08/12/dubrovnik-shelling.html|date=August 12, 1991}}",
+                  "{{cite news|url=https://www.nytimes.com/2011/03/04/world/dubrovnik-verdict.html|date=March 4, 2011}}",
+                ].join("\n"),
+              },
+            })
+          : null,
+      ),
+    );
+
+    expect(result.diagnostics.articleEnrichment).toEqual({
+      eligible: 4,
+      attempted: 4,
+      enriched: 1,
+    });
+
+    const dubrovnik = result.results.find((item) => item.url.includes("Siege_of_Dubrovnik"));
+    expect(
+      dubrovnik?.evidence.map((item) => [item.publisher, item.timing, item.attachedTo]),
+    ).toEqual([
+      ["wikipedia.org", "retrospective", "event-line"],
+      // The 2011 verdict is on the same page and is not reporting from that week.
+      ["theguardian.com", "contemporary", "article"],
+    ]);
+    expect(dubrovnik?.hasEditionTimeEvidence).toBe(true);
+    expect(dubrovnik?.hasIndependentCorroboration).toBe(true);
+    // The count now says how thinly the events are recorded rather than which sweep
+    // happened to find them.
+    expect(result.diagnostics.encyclopediaOnly).toBe(3);
   });
 
   it("never lets a candidate dated after the printed day reach the ledger", async () => {
@@ -226,9 +297,10 @@ describe("collectHistoricalCandidates", () => {
     const dates = result.results.map((item) => item.publishedAt.slice(0, 10));
     expect(dates).not.toContain("1991-08-17");
     expect(dates).not.toContain("1991-08-19");
-    expect(result.diagnostics.excludedFuture).toBeGreaterThan(0);
-    expect(result.results.every((item) => item.dayOffset <= 1 && item.dayOffset >= -30)).toBe(true);
-    expect(result.diagnostics.windowFit).toEqual({ exact: 1, adjacent: 2, ongoing: 3 });
+    expect(dates).not.toContain("1991-08-14");
+    expect(result.diagnostics.excludedFuture).toBe(3);
+    expect(result.results.every((item) => item.dayOffset <= 0 && item.dayOffset >= -30)).toBe(true);
+    expect(result.diagnostics.windowFit).toEqual({ exact: 1, adjacent: 1, ongoing: 1, recent: 2 });
   });
 
   it("reports the candidates it actually discarded rather than a constant zero", async () => {
@@ -274,10 +346,12 @@ describe("collectHistoricalCandidates", () => {
     );
 
     expect(result.results).toHaveLength(1);
-    // The July bullet and the 1961 day-page line reach back too far; the 2015 feed
-    // entry from each of the two feeds lies in the future.
-    expect(result.diagnostics.excludedTooOld).toBe(2);
-    expect(result.diagnostics.excludedFuture).toBe(2);
+    // Only the July bullet is a date from the printed year that fell outside the
+    // window. The 1961 day-page line and the 2015 entry from each of the two feeds
+    // are other years entirely, which says nothing about how thin 13 August was.
+    expect(result.diagnostics.excludedTooOld).toBe(1);
+    expect(result.diagnostics.excludedFuture).toBe(0);
+    expect(result.diagnostics.excludedOtherYear).toBe(3);
     expect(result.excludedOutsideWindow).toBe(4);
     // The impossible 30 February bullet plus the non-numeric feed year from both feeds.
     expect(result.excludedWithoutTimestamp).toBe(3);

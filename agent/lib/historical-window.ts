@@ -7,20 +7,27 @@
  *
  * - `exact`    — the printed day itself, or the evening before, which is the copy
  *                a morning paper would actually carry;
- * - `adjacent` — one day either side, covering time-zone slip in old records and
- *                wire copy that landed around press time;
- * - `ongoing`  — a crisis that began earlier and was still running that morning.
+ * - `adjacent` — two days before, where the editorial window still reaches: it
+ *                opens at seven in the evening on that day;
+ * - `ongoing`  — a dated range that began earlier and had not closed by the
+ *                printed day, which is the only evidence the archive offers that
+ *                a crisis was still running that morning;
+ * - `recent`   — a single-date event inside the lookback. It happened before the
+ *                sheet went to press and may still be worth the page, but nothing
+ *                in the record says it was still happening.
  *
- * Anything further into the future is dropped. A paper printed on 15 August 1991
- * cannot report the coup of 19 August, and treating that as eligible is exactly
- * the historical omniscience this sheet exists to avoid.
+ * Nothing dated after the printed day is admitted. The window closes at seven in
+ * the morning on the printed day, and no time zone reaches across that: midnight
+ * on the following day at UTC+14, the earliest the date turns anywhere on earth,
+ * is still eleven hours after the presses ran. A later date is not a rounding
+ * question, it is the future.
  */
-export const HISTORICAL_WINDOW_FITS = ["exact", "adjacent", "ongoing"] as const;
+export const HISTORICAL_WINDOW_FITS = ["exact", "adjacent", "ongoing", "recent"] as const;
 
 export type HistoricalWindowFit = (typeof HISTORICAL_WINDOW_FITS)[number];
 
-/** How long ago a crisis may have started and still count as running on the printed day. */
-export const ONGOING_LOOKBACK_DAYS = 30;
+/** How far back a single-date event may sit and still be offered as recent context. */
+export const RECENT_LOOKBACK_DAYS = 30;
 
 export const DAY_MS = 86_400_000;
 
@@ -47,6 +54,8 @@ export interface WindowFitResult {
  * `end` carries the closing day of a dated range such as `August 17–20`. A range
  * straddling the printed day is the clearest evidence a crisis was still running
  * that morning, so it outranks the plain distance test and ignores the lookback.
+ * Without an end day there is no such evidence, and the event is `recent` rather
+ * than `ongoing` however close it fell.
  */
 export function classifyWindowFit(
   edition: DateParts,
@@ -55,11 +64,10 @@ export function classifyWindowFit(
 ): WindowFitResult | null {
   const startDelta = dayDelta(edition, start);
   const endDelta = end ? dayDelta(edition, end) : startDelta;
+  if (startDelta > 0) return null;
   if (startDelta === 0 || startDelta === -1) return { fit: "exact", dayOffset: startDelta };
-  if (startDelta < 0 && endDelta >= 0) return { fit: "ongoing", dayOffset: startDelta };
-  if (startDelta === 1 || startDelta === -2) return { fit: "adjacent", dayOffset: startDelta };
-  if (startDelta < -2 && startDelta >= -ONGOING_LOOKBACK_DAYS) {
-    return { fit: "ongoing", dayOffset: startDelta };
-  }
+  if (endDelta >= 0) return { fit: "ongoing", dayOffset: startDelta };
+  if (startDelta === -2) return { fit: "adjacent", dayOffset: startDelta };
+  if (startDelta >= -RECENT_LOOKBACK_DAYS) return { fit: "recent", dayOffset: startDelta };
   return null;
 }

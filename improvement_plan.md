@@ -192,6 +192,8 @@ interface HistoricalEventSeed {
   discoverySources: HistoricalSource[];
   windowFit: "exact" | "adjacent" | "ongoing";
 }
+// This sketch predates the implementation. What shipped carries a fourth fit,
+// `recent`, and a second evidence axis; §19 records both and why.
 
 interface HistoricalEvidence {
   url: string;
@@ -603,6 +605,48 @@ npm run gdelt:index -- 1991 1992 1993
 ```
 
 Pass every year you want present; the file is rewritten rather than merged into. The run takes about ten seconds per year and is byte-for-byte reproducible.
+
+---
+
+## 19. Making the labels mean what they say — **landed**
+
+A review of the Phase A/B code found three labels claiming more than the record behind them supported. None of them changed what the sheet could reach; all of them changed what the sheet said about it. The fixes are here rather than in §12 because they are corrections to shipped semantics, not a phase of work.
+
+**A date after the printed day is no longer eligible.** `adjacent` admitted an event dated one day *after* the edition. Three places already told the reader otherwise — the tool description, the ledger's own "set aside" line, and instruction 4, which defined `adjacent` as either side and then declared future events already excluded, in the same paragraph. The `+1` allowance was the odd one out, so it went. Note also that `-2` was never symmetric with it: the editorial window closes at seven in the morning on the printed day and runs 36 hours, so it opens at seven in the evening two days before — `-2` is copy the desk could genuinely have held. Nothing reaches the other way. Midnight on the following day at UTC+14, the earliest that date turns anywhere on earth, is still eleven hours past the press run.
+
+**`ongoing` now means a range that had not closed.** It had been admitting any single-date event from the previous thirty days, which is how the sinking of the *MTS Oceanos* came to be labelled as still happening nine days later. Those are now `recent`: the event is past, may well deserve the page, and nothing in the record says it was still running. `ongoing` is reserved for a dated range straddling the printed day, which is the only evidence the archive actually offers for continuation. Ranked `exact > adjacent > ongoing > recent`.
+
+That distinction rests on end dates, and end dates were being read wrong. `August 30 – September 2` was parsed as August 30 to August *2*, because the bullet regex captured the closing day and discarded its month. A range that runs backwards can never straddle anything, so precisely the crises spanning a month boundary — the ones an edition printed early in the month exists to carry — lost their continuation evidence. Both the month and the year rollover are now read.
+
+**Contemporary and available are two questions, and the ledger now asks both.** A dispatch filed on 14 August about the events of the 13th is contemporary reporting by any historian's definition, and it is also something the desk printing on the 13th did not have. Evidence carries `availableByEdition` alongside `timing`, settled against the edition cutoff rather than the event date. Partial dates resolve when the whole span falls on one side — `1991-09` cannot have reached an August sheet — and stay unknown when they straddle it.
+
+The cut is at the edition date itself, not before it: a paper dated 13 August is a peer of the sheet being reconstructed, and if it could carry the story that morning so could this one. A stricter same-day rule was considered and rejected, because it would have pushed the single most valuable class of evidence into `unknown`, where undated citations live.
+
+Instruction 7 now says what the pair is for. Contemporary-but-unavailable evidence corroborates that the event happened and may not introduce one fact into the copy — no figure, cause, name or consequence — because none of it existed on the printing morning.
+
+**Two counters that were being read as one.** `excludedFuture` counted every calendar-day-page and on-this-day-feed entry from a later year, and those pages carry every year that ever used the date. A 1991 edition rejected roughly thirty post-1991 bullets on every run, and the ledger printed the total as events that happened after the print date — which reads as *the day was busy and we held the line* and means *the page covers other centuries*. Other-year rejections are now counted and reported separately, so `excludedFuture` says what it always claimed to.
+
+---
+
+## 20. Reading the article's own references — **landed**
+
+The same review found a fourth label of the same kind, and a larger one, because it was not a misnomer but a measurement of the wrong thing.
+
+Feed-discovered candidates arrived with no citations at all. The on-this-day feeds answer with an article summary and never a reference list, and nothing in the pipeline went back for one — `extractCitations` only ever saw a chronology or day-page bullet. So every candidate from `wikimedia:events` and `wikimedia:selected` carried exactly one piece of evidence, its own Wikipedia URL, and landed in `encyclopediaOnly`.
+
+That number was therefore measuring which sweep found an event rather than how well the event is recorded. A disaster with forty references on its page read exactly like one with none. Meanwhile instruction 7 told the agent to prefer candidates carrying contemporary evidence and an independent publisher — a bar those surfaces could not clear no matter what the archive held.
+
+Candidates resting on an encyclopedia alone are now sent back to Wikipedia once each for the article's own wikitext, capped at twelve requests a run. What comes back is filtered hard: only citations dating to the event's own weeks are kept, because an article covers its whole topic and most of its references belong to other years of the same war. Four per article at most.
+
+Even the survivors are not treated as equals of a bullet citation. A citation a Wikipedia editor attached to the chronology line for that day is pinned to the event; one lifted off the topic page is only dated near it, and could belong to a different incident in the same conflict. Evidence carries `attachedTo`, either `event-line` or `article`, and the agent is told to check an article-attached source before resting a figure or a cause on it.
+
+The score deliberately does not move on attachment. Weighting it would be inventing a discount from theory, which §15 says not to do; the fact is recorded, the desk weighs it, and a real edition can settle the number later if it needs one.
+
+The cap is reported rather than silent: the ledger prints how many candidates were eligible, how many were read, and how many gained a source, and says plainly that anything left over is unexamined rather than unsupported.
+
+### What this changes about Phase C
+
+The Phase C spike asks whether a contemporary newspaper improves recall and evidence. Before this, the evidence half of that question would have been measured against a baseline that was partly an artefact of what the pipeline bothered to fetch. It is now measured against what Wikipedia actually holds.
 
 ---
 

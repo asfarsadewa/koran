@@ -18,7 +18,9 @@ import {
 } from "./gdelt-conflict";
 import {
   buildEvidence,
+  classifyTiming,
   extractCitations,
+  hasEditionTimeEvidence,
   historicalEvidenceSchema,
   independentPublishers,
   scoreCandidate,
@@ -29,7 +31,7 @@ import {
   classifyWindowFit,
   dayDelta,
   HISTORICAL_WINDOW_FITS,
-  ONGOING_LOOKBACK_DAYS,
+  RECENT_LOOKBACK_DAYS,
   type DateParts,
   type HistoricalWindowFit,
 } from "./historical-window";
@@ -39,6 +41,8 @@ import { EDITORIAL_WINDOW_MS } from "./publication-context";
 // collector do not have to know which module each half lives in.
 export { HISTORICAL_WINDOW_FITS, type HistoricalWindowFit } from "./historical-window";
 export {
+  EVIDENCE_ATTACHMENTS,
+  EVIDENCE_AVAILABILITY,
   EVIDENCE_SOURCE_TYPES,
   EVIDENCE_TIMINGS,
   historicalEvidenceSchema,
@@ -83,6 +87,7 @@ export const historicalCandidateSchema = z.object({
   imageUrl: z.string().url().optional(),
   evidence: z.array(historicalEvidenceSchema),
   hasContemporaryEvidence: z.boolean(),
+  hasEditionTimeEvidence: z.boolean(),
   hasIndependentCorroboration: z.boolean(),
   evidenceScore: z.number(),
 });
@@ -92,14 +97,22 @@ export const historicalDiagnosticsSchema = z.object({
   deduplicated: z.number().int().nonnegative(),
   excludedFuture: z.number().int().nonnegative(),
   excludedTooOld: z.number().int().nonnegative(),
+  excludedOtherYear: z.number().int().nonnegative(),
   windowFit: z.object({
     exact: z.number().int().nonnegative(),
     adjacent: z.number().int().nonnegative(),
     ongoing: z.number().int().nonnegative(),
+    recent: z.number().int().nonnegative(),
   }),
   withContemporaryEvidence: z.number().int().nonnegative(),
+  withEditionTimeEvidence: z.number().int().nonnegative(),
   withIndependentCorroboration: z.number().int().nonnegative(),
   encyclopediaOnly: z.number().int().nonnegative(),
+  articleEnrichment: z.object({
+    eligible: z.number().int().nonnegative(),
+    attempted: z.number().int().nonnegative(),
+    enriched: z.number().int().nonnegative(),
+  }),
   conflictPressure: z.array(
     z.object({
       code: z.string(),
@@ -190,6 +203,20 @@ export function wikipediaArticleUrl(title: string): string | null {
   return `https://en.wikipedia.org/wiki/${encodeURIComponent(trimmed).replace(/%20/gu, "_")}`;
 }
 
+/** The inverse, so a candidate discovered as a URL can be sent back for its references. */
+export function wikipediaTitleFromUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.hostname.replace(/^www\./u, "") !== "en.wikipedia.org") return null;
+    const path = /^\/wiki\/(.+)$/u.exec(url.pathname)?.[1];
+    if (!path) return null;
+    const title = decodeURIComponent(path).replace(/_/gu, " ").trim();
+    return title && !FILE_OR_CATEGORY.test(title) ? title : null;
+  } catch {
+    return null;
+  }
+}
+
 export function extractWikiTitles(markup: string): string[] {
   const titles: string[] = [];
   for (const match of markup.matchAll(WIKI_LINK)) {
@@ -219,10 +246,11 @@ export interface HistoricalSkipLedger {
   withoutTimestamp: number;
   future: number;
   tooOld: number;
+  otherYear: number;
 }
 
 export function skipLedger(): HistoricalSkipLedger {
-  return { outsideWindow: 0, withoutTimestamp: 0, future: 0, tooOld: 0 };
+  return { outsideWindow: 0, withoutTimestamp: 0, future: 0, tooOld: 0, otherYear: 0 };
 }
 
 export interface ParsedHistoricalEvent {
@@ -248,8 +276,26 @@ function recordRejection(ledger: HistoricalSkipLedger, dayOffset: number): void 
   else ledger.tooOld += 1;
 }
 
-const MONTH_BULLET =
-  /^\*\s*\[\[((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2})\]\](?:\s*[–-]\s*\[\[(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:\|[^\]]+)?\]\])?\s*[–—:-]?\s*(.+)$/gmu;
+/**
+ * A calendar-day page and an on-this-day feed both answer with every year that ever
+ * used that date, so most of what they offer is discarded on the year alone. Counted
+ * apart from the day-distance rejections, which are the ones that say something about
+ * how thin the printed day itself was.
+ */
+function recordOtherYear(ledger: HistoricalSkipLedger): void {
+  ledger.outsideWindow += 1;
+  ledger.otherYear += 1;
+}
+
+const MONTH_NAME_GROUP =
+  "January|February|March|April|May|June|July|August|September|October|November|December";
+
+const MONTH_BULLET = new RegExp(
+  `^\\*\\s*\\[\\[((?:${MONTH_NAME_GROUP})\\s+\\d{1,2})\\]\\]` +
+    `(?:\\s*[–-]\\s*\\[\\[((?:${MONTH_NAME_GROUP})\\s+\\d{1,2})(?:\\|[^\\]]+)?\\]\\])?` +
+    `\\s*[–—:-]?\\s*(.+)$`,
+  "gmu",
+);
 
 export function parseYearMonthWikitext(
   wikitext: string,
@@ -267,11 +313,16 @@ export function parseYearMonthWikitext(
       ledger.withoutTimestamp += 1;
       continue;
     }
-    const endDay = match[2] ? Number(match[2]) : null;
+    // `August 30 – September 2` closes in a later month, and `December 30 – January 2`
+    // in a later year. Reading the end day against the start month turned both into
+    // ranges that ran backwards, and a range that runs backwards can never straddle
+    // the printed day — which is the one thing an end date is here to establish.
+    const endLabel = match[2];
+    const endInStartYear = endLabel ? parseMonthDayLabel(endLabel, year) : null;
     const endParts =
-      endDay === null
-        ? null
-        : parseIsoDate(formatIsoDate({ year, month: startParts.month, day: endDay }));
+      endInStartYear && endInStartYear.month < startParts.month
+        ? parseMonthDayLabel(endLabel ?? "", year + 1)
+        : endInStartYear;
     const fit = classifyWindowFit(editionParts, startParts, endParts);
     if (!fit) {
       recordRejection(ledger, dayDelta(editionParts, startParts));
@@ -328,7 +379,7 @@ export function parseOnThisDayPageWikitext(
   for (const match of wikitext.matchAll(DAY_PAGE_BULLET)) {
     const year = Number(match[1]);
     if (year !== editionParts.year) {
-      recordRejection(ledger, year > editionParts.year ? 1 : -1);
+      recordOtherYear(ledger);
       continue;
     }
     const eventParts = { year, month: editionParts.month, day: editionParts.day };
@@ -395,7 +446,7 @@ export function parseOnThisDayFeed(
       continue;
     }
     if (year !== editionParts.year) {
-      recordRejection(ledger, year > editionParts.year ? 1 : -1);
+      recordOtherYear(ledger);
       continue;
     }
     const pages = Array.isArray(entry?.pages) ? entry.pages : [];
@@ -530,6 +581,13 @@ export async function fetchDayPageWikitext(
   return text(record(body?.parse)?.wikitext) ?? "";
 }
 
+export async function fetchArticleWikitext(title: string, signal?: AbortSignal): Promise<string> {
+  const body = record(
+    await wikipediaGet(wikiApiUrl({ action: "parse", page: title, prop: "wikitext" }), signal),
+  );
+  return text(record(body?.parse)?.wikitext) ?? "";
+}
+
 /**
  * The Wikimedia API Portal is migrating, so the feed is read through the portal
  * host first and the equivalent per-wiki REST route second. Both answer with the
@@ -592,9 +650,46 @@ export async function fetchOnThisDayFeed(
 /* Collection                                                                 */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * A candidate found through the on-this-day feeds arrives carrying no citations at
+ * all, because the feed answers with an article summary and never its references.
+ * Left alone it reports as resting on an encyclopedia, which measures which sweep
+ * found the event rather than how well the event is recorded — a disaster with forty
+ * references on its page reads exactly like one with none. Those candidates are sent
+ * back to Wikipedia once each for the article's own reference list.
+ */
+export const MAX_ARTICLE_ENRICHMENTS = 12;
+
+/** How many harvested citations a single article may contribute. */
+const ARTICLE_CITATION_LIMIT = 4;
+
+/**
+ * An article covers its whole topic, so most of its references belong to other years
+ * of the same war. Only reporting dated to the event's own weeks is kept, and even
+ * that is marked as taken from the article rather than pinned to the day: near enough
+ * to be worth reading, not proof it describes this incident.
+ */
+export function contemporaryArticleCitations(
+  markup: string,
+  eventDate: string,
+  known: Iterable<string>,
+): ParsedCitation[] {
+  const seen = new Set(known);
+  return extractCitations(markup)
+    .filter(
+      (citation) =>
+        !seen.has(citation.url) &&
+        classifyTiming(citation.publishedAt, eventDate) === "contemporary",
+    )
+    .slice(0, ARTICLE_CITATION_LIMIT);
+}
+
 type EvidenceSummary = Pick<
   HistoricalCandidate,
-  "hasContemporaryEvidence" | "hasIndependentCorroboration" | "evidenceScore"
+  | "hasContemporaryEvidence"
+  | "hasEditionTimeEvidence"
+  | "hasIndependentCorroboration"
+  | "evidenceScore"
 >;
 
 function summariseEvidence(
@@ -605,6 +700,7 @@ function summariseEvidence(
   const independent = independentPublishers(evidence);
   return {
     hasContemporaryEvidence: evidence.some((item) => item.timing === "contemporary"),
+    hasEditionTimeEvidence: hasEditionTimeEvidence(evidence),
     hasIndependentCorroboration: independent.size > 0,
     evidenceScore: scoreCandidate({
       evidence,
@@ -623,6 +719,7 @@ function summariseEvidence(
 function toCandidate(
   event: ParsedHistoricalEvent,
   pressure: ConflictPressure[],
+  editionDate: string,
 ): HistoricalCandidate | null {
   if (!isLikelyHistoricalSourceUrl(event.url)) return null;
   let domain: string;
@@ -633,8 +730,10 @@ function toCandidate(
   }
 
   const evidence = [
-    buildEvidence({ url: event.url }, event.eventDate),
-    ...event.citations.slice(0, 6).map((citation) => buildEvidence(citation, event.eventDate)),
+    buildEvidence({ url: event.url }, event.eventDate, editionDate),
+    ...event.citations
+      .slice(0, 6)
+      .map((citation) => buildEvidence(citation, event.eventDate, editionDate)),
   ];
   const discoveredBy = [event.searchQuery];
 
@@ -655,7 +754,28 @@ function toCandidate(
   });
 }
 
-const FIT_RANK: Record<HistoricalWindowFit, number> = { exact: 0, adjacent: 1, ongoing: 2 };
+const FIT_RANK: Record<HistoricalWindowFit, number> = {
+  exact: 0,
+  adjacent: 1,
+  ongoing: 2,
+  recent: 3,
+};
+
+/**
+ * Date fit first, because the sheet exists to print that day; evidence strength then
+ * separates candidates that belong on it equally well.
+ */
+function byFitThenScore(left: HistoricalCandidate, right: HistoricalCandidate): number {
+  return (
+    FIT_RANK[left.windowFit] - FIT_RANK[right.windowFit] ||
+    right.evidenceScore - left.evidenceScore ||
+    left.title.localeCompare(right.title)
+  );
+}
+
+function restsOnEncyclopediaAlone(candidate: HistoricalCandidate): boolean {
+  return !candidate.evidence.some((item) => item.sourceType !== "encyclopedia");
+}
 
 /** One event reached by two surfaces is one candidate carrying both sets of evidence. */
 function mergeCandidates(
@@ -712,9 +832,9 @@ export async function collectHistoricalCandidates(
     ...parseYearMonthWikitext(yearSection.wikitext, editionParts.year, window.editionDate, ledger),
   );
 
-  // An edition printed early in the month would otherwise carry no ongoing context
-  // at all, because every crisis still running that morning began the month before.
-  if (editionParts.day <= ONGOING_LOOKBACK_DAYS) {
+  // An edition printed early in the month would otherwise carry nothing from before
+  // it at all, because everything inside the lookback began the month before.
+  if (editionParts.day <= RECENT_LOOKBACK_DAYS) {
     const previous =
       editionParts.month === 1
         ? { year: editionParts.year - 1, month: 12 }
@@ -757,7 +877,7 @@ export async function collectHistoricalCandidates(
       ledger.withoutTimestamp += 1;
       continue;
     }
-    const candidate = toCandidate(event, pressure);
+    const candidate = toCandidate(event, pressure, window.editionDate);
     if (!candidate) continue;
     const existing = byUrl.get(candidate.url);
     byUrl.set(
@@ -766,14 +886,45 @@ export async function collectHistoricalCandidates(
     );
   }
 
-  // Date fit first, because the sheet exists to print that day; evidence strength
-  // then separates candidates that belong on it equally well.
-  const ranked = [...byUrl.values()].sort(
-    (left, right) =>
-      FIT_RANK[left.windowFit] - FIT_RANK[right.windowFit] ||
-      right.evidenceScore - left.evidenceScore ||
-      left.title.localeCompare(right.title),
-  );
+  // Fit cannot change here, and it is the primary sort key, so choosing whom to
+  // enrich by the current order is safe even though enrichment moves the scores.
+  const eligible = [...byUrl.values()].filter(restsOnEncyclopediaAlone).sort(byFitThenScore);
+  const targets = eligible.slice(0, MAX_ARTICLE_ENRICHMENTS);
+  let enrichedFromArticle = 0;
+
+  for (const candidate of targets) {
+    const title = wikipediaTitleFromUrl(candidate.url);
+    if (!title) continue;
+    searchesRun += 1;
+    let markup: string;
+    try {
+      markup = await fetchArticleWikitext(title, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      failures.push(`wikipedia:${title} ${(error as Error).message}`);
+      continue;
+    }
+    const citations = contemporaryArticleCitations(
+      markup,
+      candidate.publishedAt,
+      candidate.evidence.map((item) => item.url),
+    );
+    if (!citations.length) continue;
+    const evidence = [
+      ...candidate.evidence,
+      ...citations.map((citation) =>
+        buildEvidence(citation, candidate.publishedAt, window.editionDate, "article"),
+      ),
+    ];
+    byUrl.set(candidate.url, {
+      ...candidate,
+      evidence,
+      ...summariseEvidence(evidence, candidate, pressure),
+    });
+    enrichedFromArticle += 1;
+  }
+
+  const ranked = [...byUrl.values()].sort(byFitThenScore);
 
   return historicalCandidateResultSchema.parse({
     searchesRun,
@@ -788,16 +939,22 @@ export async function collectHistoricalCandidates(
       deduplicated: parsed.length - ranked.length,
       excludedFuture: ledger.future,
       excludedTooOld: ledger.tooOld,
+      excludedOtherYear: ledger.otherYear,
       windowFit: {
         exact: ranked.filter((item) => item.windowFit === "exact").length,
         adjacent: ranked.filter((item) => item.windowFit === "adjacent").length,
         ongoing: ranked.filter((item) => item.windowFit === "ongoing").length,
+        recent: ranked.filter((item) => item.windowFit === "recent").length,
       },
       withContemporaryEvidence: ranked.filter((item) => item.hasContemporaryEvidence).length,
+      withEditionTimeEvidence: ranked.filter((item) => item.hasEditionTimeEvidence).length,
       withIndependentCorroboration: ranked.filter((item) => item.hasIndependentCorroboration).length,
-      encyclopediaOnly: ranked.filter(
-        (item) => !item.evidence.some((source) => source.sourceType !== "encyclopedia"),
-      ).length,
+      encyclopediaOnly: ranked.filter(restsOnEncyclopediaAlone).length,
+      articleEnrichment: {
+        eligible: eligible.length,
+        attempted: targets.length,
+        enriched: enrichedFromArticle,
+      },
       conflictPressure: markCoverage(
         pressure,
         ranked.map((item) => `${item.title} ${item.description}`),
