@@ -24,7 +24,7 @@ Eve dan Cloudflare mengerjakan bagian yang berbeda:
 4. **Turnstile** memeriksa pembaca. Setelah Siteverify berhasil, Worker menerbitkan cookie akses `HttpOnly`, `Secure`, dan bertanda tangan selama 12 jam.
 5. **Static Assets** dari Worker menampilkan edisi terkini; setiap berita merupakan tautan ke sumber eksternal.
 
-Pemisahan ini disengaja. Vercel hanya menjalankan Eve, Vercel Workflow, dan jadwal redaksi; Cloudflare tetap menjadi rumah tunggal bagi halaman pembaca, Turnstile, API penerbitan, dan D1. Kanal HTTP Eve menolak pemanggilan umum dan hanya menerima OIDC dari proyek Vercel yang sama atau sesi pengembangan lokal.
+Pemisahan ini disengaja. Vercel hanya menjalankan Eve, Vercel Workflow, dan jadwal redaksi; Cloudflare tetap menjadi rumah tunggal bagi halaman pembaca, Turnstile, API penerbitan, dan D1. Kanal HTTP Eve menolak pemanggilan umum dan hanya menerima OIDC dari proyek Vercel yang sama atau sesi pengembangan lokal. Pemanggilan Vercel Cron juga wajib membawa `Authorization: Bearer <CRON_SECRET>`; nilai secret hanya disimpan pada lingkungan produksi Vercel.
 
 ## Jadwal redaksi
 
@@ -113,16 +113,17 @@ npx wrangler secret put PUBLISH_SECRET
 - `SESSION_SECRET` menandatangani cookie akses pembaca.
 - `PUBLISH_SECRET` menandatangani payload dari Eve. Nilai yang sama harus tersedia pada host Eve sebagai variabel `PUBLISH_SECRET`.
 
-Proyek Eve di Vercel memerlukan empat variabel produksi:
+Proyek Eve di Vercel memerlukan lima variabel produksi:
 
 ```dotenv
 OPENAI_API_KEY="..."
 BRAVE_API_KEY="..."
+CRON_SECRET="..."
 CLOUDFLARE_PUBLISH_URL="https://nama-worker.example"
 PUBLISH_SECRET="..."
 ```
 
-Hubungkan proyek dengan `eve link`, pasang keempat secret pada lingkungan produksi Vercel, lalu jalankan `eve deploy`. Eve menerjemahkan jadwal menjadi Vercel Cron; periksa kemunculannya pada **Settings → Cron Jobs** dan riwayatnya pada **Observability → Cron Jobs**. Pemanggilan manual yang setara adalah `npm run agent:curate`.
+Hubungkan proyek dengan `eve link`, pasang kelima variabel pada lingkungan produksi Vercel, lalu jalankan `eve deploy`. Gunakan nilai acak yang berbeda untuk `CRON_SECRET` dan `PUBLISH_SECRET`. Eve menerjemahkan jadwal menjadi Vercel Cron; periksa kemunculannya pada **Settings → Cron Jobs** dan riwayatnya pada **Observability → Cron Jobs**. Pemanggilan manual yang setara adalah `npm run agent:curate`.
 
 ## Pemeriksaan mutu
 
@@ -167,3 +168,7 @@ npm run worker:dry-run
 - [Cloudflare Turnstile: validasi server](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/)
 - [Cloudflare D1 Worker API](https://developers.cloudflare.com/d1/worker-api/)
 - [Cloudflare Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/binding/)
+
+## Keamanan dan lisensi
+
+Laporkan kerentanan melalui petunjuk pada [`SECURITY.md`](SECURITY.md), bukan melalui issue publik. Repositori ini tersedia untuk pemeriksaan kode, tetapi bukan proyek sumber terbuka. Ketentuan hak cipta terdapat pada [`LICENSE`](LICENSE), dan batas kontribusi dijelaskan dalam [`CONTRIBUTING.md`](CONTRIBUTING.md).
