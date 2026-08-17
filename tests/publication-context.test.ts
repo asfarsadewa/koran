@@ -35,6 +35,8 @@ describe("buildPublicationContext", () => {
     const context = buildPublicationContext(now);
     expect(context.issueNumber).toBe(1);
     expect(context.expectedArticleCount).toBe(8);
+    // Today's window is never short of eight, so the daily sheet has no floor below it.
+    expect(context.minimumArticleCount).toBe(8);
     expect(context.searchWindowEnd).toBe(now.toISOString());
     expect(EDITORIAL_WINDOW_HOURS).toBe(36);
     expect(Date.parse(context.searchWindowEnd) - Date.parse(context.searchWindowStart)).toBe(
@@ -60,6 +62,10 @@ describe("buildKemarinPublicationContext", () => {
       EDITORIAL_WINDOW_MS,
     );
     expect(context.searchWindowEnd).toBe(shiftPerthInstantByYears(now, 35).toISOString());
+    // Eight is still the target, but a thin archive may leave far fewer, and the
+    // sheet prints what it has rather than holding the run.
+    expect(context.expectedArticleCount).toBe(8);
+    expect(context.minimumArticleCount).toBe(1);
   });
 
   it("clamps 29 February onto the last day of February 35 years earlier", () => {

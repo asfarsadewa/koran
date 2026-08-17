@@ -104,8 +104,29 @@ const chineseCopy = (minimum: number, maximum: number) =>
     .max(maximum)
     .refine((value) => /\p{Script=Han}/u.test(value), "Chinese copy must contain Han characters");
 
+/** A full sheet, and the most any edition may carry. */
+export const FULL_ARTICLE_COUNT = 8;
+
+/**
+ * The Kemarin sheet reconstructs one historical morning, and some mornings simply
+ * do not leave eight defensible humanitarian stories in the archive. It prints what
+ * the day supports rather than padding the page or skipping the run — a thin sheet
+ * is a truthful sheet, and a missing sheet tells the reader nothing at all.
+ *
+ * Today's edition gets no such allowance. Its 36-hour window is never short of
+ * eight, so a short daily sheet would mean the desk gave up, not that the world
+ * was quiet.
+ */
+export const MIN_KEMARIN_ARTICLES = 1;
+
+/** Ranks must run 1..n with no gaps, because the front page lays out by position. */
+function ranksAreContiguous(ranks: number[]): boolean {
+  const distinct = [...new Set(ranks)].sort((left, right) => left - right);
+  return distinct.length === ranks.length && distinct.every((rank, index) => rank === index + 1);
+}
+
 export const articleSchema = z.object({
-  rank: z.number().int().min(1).max(8),
+  rank: z.number().int().min(1).max(FULL_ARTICLE_COUNT),
   section: z.enum(SECTION_KEYS),
   headline: z.string().trim().min(20).max(140),
   dek: z.string().trim().min(70).max(420),
@@ -118,7 +139,7 @@ export const articleSchema = z.object({
 });
 
 export const chineseArticleSchema = z.object({
-  rank: z.number().int().min(1).max(8),
+  rank: z.number().int().min(1).max(FULL_ARTICLE_COUNT),
   headline: chineseCopy(8, 70),
   dek: chineseCopy(30, 260),
   dateline: chineseCopy(2, 40),
@@ -128,15 +149,14 @@ export const chineseArticleSchema = z.object({
 const chineseEditionSchema = z
   .object({
     mastheadDek: chineseCopy(20, 180),
-    articles: z.array(chineseArticleSchema).length(8),
+    articles: z.array(chineseArticleSchema).min(1).max(FULL_ARTICLE_COUNT),
   })
   .superRefine((edition, context) => {
-    const ranks = new Set(edition.articles.map((article) => article.rank));
-    if (ranks.size !== 8 || [...ranks].some((rank) => rank < 1 || rank > 8)) {
+    if (!ranksAreContiguous(edition.articles.map((article) => article.rank))) {
       context.addIssue({
         code: "custom",
         path: ["articles"],
-        message: "Chinese articles must use each rank from 1 through 8 exactly once",
+        message: "Chinese articles must use each rank from 1 through the article count exactly once",
       });
     }
   });
@@ -153,18 +173,36 @@ export const editionInputSchema = z
     publicationDate: calendarDate.optional(),
     issueNumber: z.number().int().positive().max(999_999),
     mastheadDek: z.string().trim().min(40).max(260),
-    articles: z.array(articleSchema).length(8),
+    articles: z.array(articleSchema).min(MIN_KEMARIN_ARTICLES).max(FULL_ARTICLE_COUNT),
     translations: z.object({
       zhHans: chineseEditionSchema,
     }),
   })
   .superRefine((edition, context) => {
-    const ranks = new Set(edition.articles.map((article) => article.rank));
-    if (ranks.size !== 8 || [...ranks].some((rank) => rank < 1 || rank > 8)) {
+    if (!ranksAreContiguous(edition.articles.map((article) => article.rank))) {
       context.addIssue({
         code: "custom",
         path: ["articles"],
-        message: "Articles must use each rank from 1 through 8 exactly once",
+        message: "Articles must use each rank from 1 through the article count exactly once",
+      });
+    }
+
+    // Only the historical sheet may run short, and only because the archive can be
+    // genuinely thin. Today's window never is.
+    if (edition.kind !== "kemarin" && edition.articles.length !== FULL_ARTICLE_COUNT) {
+      context.addIssue({
+        code: "custom",
+        path: ["articles"],
+        message: `Today's edition must carry exactly ${FULL_ARTICLE_COUNT} articles`,
+      });
+    }
+
+    // Both languages describe one sheet, so a short sheet is short in both.
+    if (edition.translations.zhHans.articles.length !== edition.articles.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["translations", "zhHans", "articles"],
+        message: "Chinese articles must match the Indonesian article count",
       });
     }
 

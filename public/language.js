@@ -1,12 +1,23 @@
 export const INDONESIAN_LOCALE = "id";
 export const CHINESE_LOCALE = "zh-Hans";
 
+/**
+ * A Kemarin sheet prints as many stories as its historical morning supports, so
+ * completeness is measured against this edition's own article count rather than a
+ * fixed eight. Every printed rank must be translated; one missing rank would drop a
+ * story from the page when the reader switches language.
+ */
 export function hasChineseEdition(edition) {
   const chinese = edition?.translations?.zhHans;
   if (!chinese || typeof chinese.mastheadDek !== "string") return false;
-  if (!Array.isArray(chinese.articles) || chinese.articles.length !== 8) return false;
+  const printed = Array.isArray(edition?.articles) ? edition.articles.length : 0;
+  if (printed === 0) return false;
+  if (!Array.isArray(chinese.articles) || chinese.articles.length !== printed) return false;
   const ranks = new Set(chinese.articles.map((article) => article?.rank));
-  return ranks.size === 8 && [...ranks].every((rank) => Number.isInteger(rank) && rank >= 1 && rank <= 8);
+  return (
+    ranks.size === printed &&
+    [...ranks].every((rank) => Number.isInteger(rank) && rank >= 1 && rank <= printed)
+  );
 }
 
 export function mixLanguageText(source, target, progress) {

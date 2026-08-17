@@ -129,7 +129,7 @@ describe("readLatestEdition", () => {
     expect(fake.calls[1]?.sql).toContain("LEFT JOIN article_translations");
   });
 
-  it("returns a Chinese edition only when all eight translated articles are complete", async () => {
+  it("returns a Chinese edition only when every translated article is complete", async () => {
     const fake = fakeDatabase({
       edition: {
         id: "2026-08-10",
@@ -172,6 +172,90 @@ describe("readLatestEdition", () => {
       rank: 1,
       dateline: "日内瓦",
     });
+  });
+
+  it("keeps the Chinese edition on a short Kemarin sheet translated to its own length", async () => {
+    const fake = fakeDatabase({
+      edition: {
+        id: "kemarin-2026-08-17",
+        kind: "kemarin",
+        edition_date: "1991-08-17",
+        publication_date: "2026-08-17",
+        issue_number: 9,
+        masthead_dek: "Arsip hari itu hanya menopang tiga berita.",
+        published_at: "2026-08-16T23:06:00.000Z",
+        curator_model: "gpt-5.6-sol",
+        is_demo: 0,
+        masthead_dek_zh: "当日档案仅能支撑三则报道，因此本版篇幅从简。",
+      },
+      articles: Array.from({ length: 3 }, (_, index) => ({
+        id: `kemarin-2026-08-17-${index + 1}`,
+        rank: index + 1,
+        section: "humanitarian",
+        headline: `Judul laporan kemanusiaan nomor ${index + 1}`,
+        dek: "Keterangan panjang mengenai keadaan kemanusiaan.",
+        dateline: "JENEWA",
+        source_name: "Penerbit Contoh",
+        source_url: `https://en.wikipedia.org/wiki/Historical_crisis_report_${index + 1}`,
+        source_published_at: "1991-08-17T00:00:00Z",
+        impact: "Dampak panjang terhadap warga sipil dan layanan pokok.",
+        image_url: null,
+        headline_zh: `第${index + 1}号人道危机报告受到关注`,
+        dek_zh: "经核实的消息表明当地居民生活及基本公共服务遭受严重扰乱。",
+        dateline_zh: "日内瓦",
+        impact_zh: "受影响家庭取得粮食、清洁饮水以及医疗照护的渠道已经缩减。",
+      })),
+    });
+
+    const edition = await readEdition(fake.database, "2026-08-17", "kemarin");
+
+    // Three of three translated is complete, and the reader keeps its language switch.
+    expect(edition?.articles).toHaveLength(3);
+    expect(edition?.translations?.zhHans.articles).toHaveLength(3);
+  });
+
+  it("drops the Chinese edition when a short sheet is only partly translated", async () => {
+    const fake = fakeDatabase({
+      edition: {
+        id: "kemarin-2026-08-17",
+        kind: "kemarin",
+        edition_date: "1991-08-17",
+        publication_date: "2026-08-17",
+        issue_number: 9,
+        masthead_dek: "Arsip hari itu hanya menopang tiga berita.",
+        published_at: "2026-08-16T23:06:00.000Z",
+        curator_model: "gpt-5.6-sol",
+        is_demo: 0,
+        masthead_dek_zh: "当日档案仅能支撑三则报道，因此本版篇幅从简。",
+      },
+      articles: Array.from({ length: 3 }, (_, index) => ({
+        id: `kemarin-2026-08-17-${index + 1}`,
+        rank: index + 1,
+        section: "humanitarian",
+        headline: `Judul laporan kemanusiaan nomor ${index + 1}`,
+        dek: "Keterangan panjang mengenai keadaan kemanusiaan.",
+        dateline: "JENEWA",
+        source_name: "Penerbit Contoh",
+        source_url: `https://en.wikipedia.org/wiki/Historical_crisis_report_${index + 1}`,
+        source_published_at: "1991-08-17T00:00:00Z",
+        impact: "Dampak panjang terhadap warga sipil dan layanan pokok.",
+        image_url: null,
+        // The last story never got a translation, so switching would lose it.
+        ...(index === 2
+          ? {}
+          : {
+              headline_zh: `第${index + 1}号人道危机报告受到关注`,
+              dek_zh: "经核实的消息表明当地居民生活及基本公共服务遭受严重扰乱。",
+              dateline_zh: "日内瓦",
+              impact_zh: "受影响家庭取得粮食、清洁饮水以及医疗照护的渠道已经缩减。",
+            }),
+      })),
+    });
+
+    const edition = await readEdition(fake.database, "2026-08-17", "kemarin");
+
+    expect(edition?.articles).toHaveLength(3);
+    expect(edition).not.toHaveProperty("translations");
   });
 
   it("selects an archived edition by its exact publication date", async () => {

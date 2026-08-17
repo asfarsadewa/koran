@@ -608,7 +608,9 @@ function updateLanguageSwitch() {
 function renderEdition(edition, locale = currentLocale) {
   clippingObserver?.disconnect();
   const articles = [...edition.articles].sort((left, right) => left.rank - right.rank);
-  if (articles.length !== 8) throw new Error("Susunan edisi tidak lengkap.");
+  // A Kemarin sheet prints what its historical morning supports, so the page lays
+  // out from one story upward: the lead, then up to three wire items, then cards.
+  if (articles.length === 0) throw new Error("Susunan edisi tidak lengkap.");
   if (locale === CHINESE_LOCALE && !hasChineseEdition(edition)) {
     locale = INDONESIAN_LOCALE;
   }
@@ -644,11 +646,12 @@ function renderEdition(edition, locale = currentLocale) {
       : "Dihimpun mesin redaksi pukul tujuh WITA",
   );
 
+  const wireArticles = localizedArticles.slice(1, 4);
+  const cardArticles = localizedArticles.slice(4);
+
   renderLead(localizedArticles[0], locale);
-  elements.wire.replaceChildren(...localizedArticles.slice(1, 4).map((article) => renderWire(article, locale)));
-  elements.storyGrid.replaceChildren(
-    ...localizedArticles.slice(4).map((article) => renderCard(article, locale)),
-  );
+  elements.wire.replaceChildren(...wireArticles.map((article) => renderWire(article, locale)));
+  elements.storyGrid.replaceChildren(...cardArticles.map((article) => renderCard(article, locale)));
   applyStaticCopy(copy);
   updateLanguageSwitch();
   updateEditionSwitch();
@@ -656,7 +659,11 @@ function renderEdition(edition, locale = currentLocale) {
   elements.loading.hidden = true;
   elements.empty.hidden = true;
   elements.frontGrid.hidden = false;
-  elements.storyGrid.hidden = false;
+  // A short historical sheet can leave either of these with nothing in it, and an
+  // empty column still draws its own rules and its "KAWAT DUNIA" header.
+  const wireColumn = elements.wire.closest(".world-wire");
+  if (wireColumn) wireColumn.hidden = wireArticles.length === 0;
+  elements.storyGrid.hidden = cardArticles.length === 0;
 
   if (requestedArticleRank && !requestedStoryRevealed) {
     requestedStoryRevealed = true;

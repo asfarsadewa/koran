@@ -11,7 +11,7 @@ import {
   hasChineseEdition,
   mixLanguageText,
 } from "../public/language.js";
-import { validEditionPublish } from "./fixtures";
+import { shortKemarinPublish, validEditionPublish } from "./fixtures";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -27,7 +27,7 @@ describe("newspaper language transformation", () => {
     expect(middle).toMatch(/[A-Z]/u);
   });
 
-  it("enables Chinese only for a complete eight-story translation", () => {
+  it("enables Chinese only when every printed story is translated", () => {
     const complete = validEditionPublish();
     expect(hasChineseEdition(complete)).toBe(true);
 
@@ -35,6 +35,15 @@ describe("newspaper language transformation", () => {
     incomplete.translations.zhHans.articles.pop();
     expect(hasChineseEdition(incomplete)).toBe(false);
     expect(hasChineseEdition({ articles: [] })).toBe(false);
+  });
+
+  it("measures completeness against a short sheet's own length, not a fixed eight", () => {
+    const short = shortKemarinPublish(3);
+    expect(hasChineseEdition(short)).toBe(true);
+
+    const partlyTranslated = structuredClone(short);
+    partlyTranslated.translations.zhHans.articles.pop();
+    expect(hasChineseEdition(partlyTranslated)).toBe(false);
   });
 
   it("formats edition and source dates for both language conventions", () => {
