@@ -109,8 +109,10 @@ export async function readEdition(
   const chineseMastheadDek = edition.masthead_dek_zh;
   const translations =
     typeof chineseMastheadDek === "string" &&
-    articleResult.results.length === 8 &&
-    chineseArticles.length === 8
+    articleResult.results.length > 0 &&
+    // Every article on the sheet must be translated, however short the sheet is;
+    // a partly translated edition would drop stories when the reader switches.
+    chineseArticles.length === articleResult.results.length
       ? {
           zhHans: {
             mastheadDek: chineseMastheadDek,

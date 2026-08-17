@@ -650,6 +650,30 @@ The Phase C spike asks whether a contemporary newspaper improves recall and evid
 
 ---
 
+## 21. The eight-story decision, made — **landed**
+
+§18 recorded a product decision nobody had made: some printed days cannot yield eight defensible humanitarian stories, and the sheet had three options — find more material, print fewer, or print eight and admit the weakness. The third was what happened, inherited rather than chosen.
+
+On 17 August 2026 the question answered itself in the worst available way. The Kemarin run for 17 August 1991 fired on schedule, read its ledger, and **published nothing**. The ledger held three `exact` candidates and all three were unusable: Hurricane Bob, dated the 17th by the chronology but evidenced only by dispatches of the 19th; the re-interment of Frederick the Great, which is not a humanitarian story; and the Strathfield massacre, which happened at half past three that afternoon, hours after the presses. Everything else was `recent`.
+
+Two failures met here. The first was mine: §19 split `recent` out of `ongoing`, and `agent/schedules/edisi-kemarin.md` still offered the desk only "peristiwa berdekatan atau krisis yang masih berlangsung" as its thin-day fallback. Those are `adjacent` and `ongoing`, and A.1 had emptied both into a category the schedule had never heard of. The agent looked for its sanctioned escape hatch, found two empty buckets and one it had just been warned about, and correctly concluded it had nothing it was permitted to use.
+
+The second was the contract. Even with the vocabulary fixed, a genuinely thin morning would still have forced a choice between padding and silence.
+
+**The sheet now prints what the day supports.** A Kemarin edition carries one to eight stories, ranked 1..n without a gap, and names the day's thinness in its own masthead dek. A thin sheet is truthful; a missing sheet tells the reader nothing. Padding remains forbidden — no non-humanitarian filler, no under-evidenced candidate, no invention.
+
+**Today's edition stays at exactly eight.** Its 36-hour window is never short of eight negative-impact stories, so a short daily sheet would mean the desk gave up rather than that the world was quiet. The allowance is specific to the archive, and the schema enforces the split rather than trusting prose.
+
+Both languages carry the same ranks: the Chinese article count must equal the Indonesian, and the reader's language switch now measures completeness against the sheet's own length instead of a fixed eight — otherwise a short sheet would silently lose its Chinese edition. The front page lays out lead, then up to three wire items, then cards, and hides the wire column and the card grid when a short sheet leaves them empty.
+
+### What this does not fix
+
+Recall. The archive still produced three usable candidates for a major world date, and only one of them was a humanitarian story. The sheet will now publish that one rather than nothing, which is better reading and better bookkeeping, but §18 step 2 — measure whether a contemporary press provider closes the gap — is the work that actually addresses the shortage.
+
+Note also that 17 August 1991 spent four requests on article enrichment and gained nothing (`articleEnrichment: {eligible: 4, attempted: 4, enriched: 0}`). §20's harvest needs measuring against real articles before its yield is trusted: `extractCitations` only matches `https://` URLs, and 1991-era references are frequently `http://`, dateless, or bibliographic with no link at all.
+
+---
+
 ## Reference starting points
 
 - GDELT Project: https://www.gdeltproject.org/

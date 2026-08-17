@@ -14,7 +14,7 @@ const outputSchema = z.object({
 
 export default defineTool({
   description:
-    "Publish one complete, source-grounded Juara Merdeka sheet in Indonesian and Simplified Chinese to the Cloudflare newspaper. Set kind to hari_ini for this morning's edition or kemarin for the historical sheet; kemarin requires publicationDate (Perth assembly date) and editionDate equal to that date minus 35 years. Both language versions are required, share the same eight source articles, and are committed atomically. The operation is idempotent by sheet kind and publication date.",
+    "Publish one complete, source-grounded Juara Merdeka sheet in Indonesian and Simplified Chinese to the Cloudflare newspaper. Set kind to hari_ini for this morning's edition or kemarin for the historical sheet; kemarin requires publicationDate (Perth assembly date) and editionDate equal to that date minus 35 years. Both language versions are required, carry the same ranks over the same source articles, and are committed atomically. A hari_ini sheet must carry exactly eight; a kemarin sheet carries as many as the archive of that morning supports, from one to eight, ranked 1..n without a gap. The operation is idempotent by sheet kind and publication date.",
   inputSchema: editionInputSchema,
   outputSchema,
   async execute(edition, context) {

@@ -8,7 +8,7 @@ import {
   parseIsoDate,
   resolvedPublicationDate,
 } from "../shared/edition";
-import { validEditionPublish, validKemarinPublish } from "./fixtures";
+import { shortKemarinPublish, validEditionPublish, validKemarinPublish } from "./fixtures";
 
 function validEdition() {
   return editionInputSchema.parse(validEditionPublish());
@@ -88,6 +88,37 @@ describe("editionInputSchema", () => {
 describe("kemarin editionInputSchema", () => {
   it("accepts a dated historical sheet with encyclopedia sources", () => {
     expect(editionInputSchema.safeParse(validKemarinPublish()).success).toBe(true);
+  });
+
+  it("prints what a thin historical morning supports rather than nothing at all", () => {
+    expect(editionInputSchema.safeParse(shortKemarinPublish(7)).success).toBe(true);
+    expect(editionInputSchema.safeParse(shortKemarinPublish(3)).success).toBe(true);
+    // Some mornings leave one defensible story. One is still a newspaper.
+    expect(editionInputSchema.safeParse(shortKemarinPublish(1)).success).toBe(true);
+    expect(editionInputSchema.safeParse(shortKemarinPublish(0)).success).toBe(false);
+  });
+
+  it("keeps today's edition at a full sheet, because its window is never thin", () => {
+    const short = validEditionPublish();
+    short.articles = short.articles.slice(0, 5);
+    short.translations.zhHans.articles = short.translations.zhHans.articles.slice(0, 5);
+    expect(editionInputSchema.safeParse(short).success).toBe(false);
+  });
+
+  it("refuses a thin sheet whose ranks skip a number", () => {
+    const gapped = shortKemarinPublish(3);
+    const last = gapped.articles[2];
+    expect(last).toBeDefined();
+    if (!last) return;
+    // Ranks 1, 2, 5 would leave the front page laying out into an empty slot.
+    last.rank = 5;
+    expect(editionInputSchema.safeParse(gapped).success).toBe(false);
+  });
+
+  it("refuses a thin sheet translated to a different length", () => {
+    const mismatched = shortKemarinPublish(4);
+    mismatched.translations.zhHans.articles.pop();
+    expect(editionInputSchema.safeParse(mismatched).success).toBe(false);
   });
 
   it("rejects a Kemarin sheet without a Perth publication date", () => {

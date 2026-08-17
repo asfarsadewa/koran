@@ -53,3 +53,22 @@ export function validKemarinPublish(): EditionPublishInput {
     })),
   };
 }
+
+/**
+ * A Kemarin sheet from a historically thin morning. The archive left fewer than eight
+ * defensible stories, so the sheet prints what it has, ranked 1..count in both
+ * languages.
+ */
+export function shortKemarinPublish(count = 3): EditionPublishInput {
+  const full = validKemarinPublish();
+  return {
+    ...full,
+    articles: full.articles.slice(0, count),
+    translations: {
+      zhHans: {
+        ...full.translations.zhHans,
+        articles: full.translations.zhHans.articles.slice(0, count),
+      },
+    },
+  };
+}

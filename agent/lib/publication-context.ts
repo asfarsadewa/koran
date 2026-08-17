@@ -6,6 +6,7 @@ import {
   subtractCalendarYears,
   type EditionKind,
 } from "../../shared/calendar";
+import { FULL_ARTICLE_COUNT, MIN_KEMARIN_ARTICLES } from "../../shared/edition";
 
 const PUBLICATION_TIME_ZONE = "Australia/Perth";
 const FIRST_EDITION_DATE = Date.UTC(2026, 7, 9);
@@ -74,7 +75,9 @@ export function buildPublicationContext(now = new Date(), kind: EditionKind = DE
     publicationTime: "07.00 WITA",
     offsetYears: kind === "kemarin" ? KEMARIN_OFFSET_YEARS : 0,
     ...buildEditorialWindow(windowNow),
-    expectedArticleCount: 8,
+    expectedArticleCount: FULL_ARTICLE_COUNT,
+    // The historical archive can be genuinely thin; the 36-hour news window is not.
+    minimumArticleCount: kind === "kemarin" ? MIN_KEMARIN_ARTICLES : FULL_ARTICLE_COUNT,
   } as const;
 }
 
