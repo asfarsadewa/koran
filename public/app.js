@@ -226,16 +226,45 @@ function impactNote(article, locale) {
   return note;
 }
 
-function storyFigure(article) {
+function storyFigure(article, { eager = false } = {}) {
   if (!article.imageUrl) return null;
-  const figure = make("figure", "story-figure");
+  const figure = make("figure", "story-figure story-figure--loading");
   const image = new Image();
-  image.src = article.imageUrl;
   image.alt = "";
-  image.loading = "lazy";
+  image.loading = eager ? "eager" : "lazy";
+  image.fetchPriority = eager ? "high" : "auto";
   image.decoding = "async";
   image.referrerPolicy = "no-referrer";
+
+  // The stored publisher address is often hostile to browser hotlinking. Put
+  // the authenticated, same-origin press first, retain the publisher as a
+  // last-resort fallback, and never leave the browser's broken-image glyph on
+  // the printed sheet.
+  const sources = [clippingImageUrl(article), article.imageUrl].filter(
+    (source, index, candidates) => source && candidates.indexOf(source) === index,
+  );
+  let sourceIndex = 0;
+  const loadNextSource = () => {
+    const source = sources[sourceIndex];
+    sourceIndex += 1;
+    if (source) {
+      image.src = source;
+      return;
+    }
+    figure.remove();
+  };
+
+  image.addEventListener(
+    "load",
+    () => {
+      figure.classList.remove("story-figure--loading");
+      figure.classList.add("story-figure--ready");
+    },
+    { once: true },
+  );
+  image.addEventListener("error", loadNextSource);
   figure.append(image);
+  loadNextSource();
   return figure;
 }
 
@@ -499,7 +528,7 @@ function renderLead(article, locale) {
     headline.classList.add("lead-headline--long");
   }
   const deck = make("p", "lead-dek", article.dek, `article-${article.rank}-dek`);
-  const figure = storyFigure(article);
+  const figure = storyFigure(article, { eager: true });
   link.append(storySection(article, locale), headline);
   if (figure) link.append(figure);
   link.append(deck, impactNote(article, locale), storySource(article, locale));

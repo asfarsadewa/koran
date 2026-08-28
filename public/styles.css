@@ -474,12 +474,41 @@ main,
   background: var(--ink-soft);
 }
 
+.story-figure--loading {
+  aspect-ratio: 16 / 9;
+  background:
+    repeating-linear-gradient(135deg, transparent 0 7px, rgba(0, 0, 0, 0.13) 7px 8px),
+    var(--paper-deep);
+}
+
+.story-figure--loading::before {
+  content: "FOTO · SEDANG DICETAK";
+  position: absolute;
+  z-index: 1;
+  inset: 50% auto auto 50%;
+  padding: 5px 8px 4px;
+  color: var(--paper-bright);
+  background: var(--ink);
+  font: 800 10px/1 "Roboto Condensed JM", "Arial Narrow", sans-serif;
+  letter-spacing: 0.16em;
+  transform: translate(-50%, -50%) rotate(-1deg);
+}
+
+html[lang="zh-Hans"] .story-figure--loading::before {
+  content: "图片制版中";
+}
+
 .story-figure img {
   display: block;
   width: 100%;
   max-height: 430px;
+  opacity: 0;
   object-fit: cover;
   filter: grayscale(1) contrast(1.45) brightness(0.93);
+}
+
+.story-figure--ready img {
+  opacity: 1;
 }
 
 .story-figure::after {

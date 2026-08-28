@@ -61,8 +61,14 @@ describe("story clipping sharing", () => {
     expect(app).toContain("IntersectionObserver");
     expect(app).toContain('new URL("/api/article-image"');
     expect(app).toContain('searchParams.set("jenis", KEMARIN_SHEET)');
+    expect(app).toContain('const sources = [clippingImageUrl(article), article.imageUrl]');
+    expect(app).toContain('image.addEventListener("error", loadNextSource)');
+    expect(app).toContain("figure.remove()");
     expect(css).toContain(".edition-switch");
     expect(css).toContain(".kemarin-notice");
+    expect(css).toContain(".story-figure--loading");
+    expect(css).toContain("FOTO · SEDANG DICETAK");
+    expect(css).toContain(".story-figure--ready img");
     expect(css).toContain(".story-share-button");
     expect(css).toContain("min-height: 44px");
     expect(share).toContain("canvas.toBlob");
