@@ -6,6 +6,7 @@ import {
   parseOnThisDayFeed,
   parseOnThisDayPageWikitext,
   parseYearMonthWikitext,
+  pickEventTitle,
   skipLedger,
   wikipediaArticleUrl,
 } from "../agent/lib/historical-news";
@@ -107,6 +108,40 @@ describe("historical markup parsing", () => {
     ]);
     // The 5 July collapse is 39 days back, past the recent lookback.
     expect(ledger.tooOld).toBe(1);
+  });
+
+  it("reads every bullet nested under a date, not only the first", () => {
+    const events = parseYearMonthWikitext(
+      [
+        "* [[September 11]]",
+        "** Lebanon hostage crisis: [[Israel]] releases 51 Arab prisoners and the bodies of nine guerrillas.",
+        "** The [[Soviet Union]] announces plans to withdraw military and economic aid to [[Cuba]].",
+        "* [[September 15]] – In the [[1991 Swedish general election|Swedish general election]], the Social Democrats lose.",
+        "** [[Ingvar Carlsson]] resigns after a nested bullet inherits the date of the line above it.",
+        "===October===",
+        "** An orphan bullet under a heading has no date to inherit and is dropped.",
+      ].join("\n"),
+      1991,
+      "1991-09-26",
+    );
+
+    expect(events.map((event) => [event.dayOffset, event.title])).toEqual([
+      [-15, "Israel"],
+      [-15, "Soviet Union"],
+      [-11, "1991 Swedish general election"],
+      [-11, "Ingvar Carlsson"],
+    ]);
+  });
+
+  it("files a line under the event it links rather than the town it happened in", () => {
+    const [event] = parseYearMonthWikitext(
+      "* [[September 3]] – In [[Hamlet, North Carolina|Hamlet]], [[North Carolina]], [[Hamlet chicken processing plant fire|a grease fire breaks out]] at a chicken plant, killing 25 people.",
+      1991,
+      "1991-09-26",
+    );
+    expect(event?.url).toBe("https://en.wikipedia.org/wiki/Hamlet_chicken_processing_plant_fire");
+    expect(pickEventTitle(["Iraq", "Kurdistan"])).toBe("Iraq");
+    expect(pickEventTitle([])).toBeUndefined();
   });
 
   it("keeps only the matching year from an on-this-day page", () => {
@@ -224,9 +259,10 @@ describe("collectHistoricalCandidates", () => {
   it("runs the archive sweep, deduplicates URLs and records both discovery surfaces", async () => {
     const result = await runCollector(archiveFetchMock());
 
-    // Two month sections, the calendar-day page, both on-this-day feeds, and one
-    // request back to each of the four candidates resting on an encyclopedia alone.
-    expect(result.searchesRun).toBe(11);
+    // Two month sections, the calendar-day page, both on-this-day feeds, the seven
+    // harm category roots, and one request back to each of the four candidates
+    // resting on an encyclopedia alone.
+    expect(result.searchesRun).toBe(18);
     expect(result.diagnostics.articleEnrichment).toEqual({
       eligible: 4,
       attempted: 4,
@@ -283,7 +319,7 @@ describe("collectHistoricalCandidates", () => {
     expect(
       dubrovnik?.evidence.map((item) => [item.publisher, item.timing, item.attachedTo]),
     ).toEqual([
-      ["wikipedia.org", "retrospective", "event-line"],
+      ["wikipedia.org", "retrospective", "self"],
       // The 2011 verdict is on the same page and is not reporting from that week.
       ["theguardian.com", "contemporary", "article"],
     ]);
@@ -375,9 +411,10 @@ describe("collectHistoricalCandidates", () => {
     });
     const result = await runCollector(fetchMock);
 
-    // Two chronology tables of contents with no body to follow, the day page, both feeds.
-    expect(result.searchesRun).toBe(5);
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    // Two chronology tables of contents with no body to follow, the day page, both
+    // feeds, and the seven category roots, which hold no subcategories to follow.
+    expect(result.searchesRun).toBe(12);
+    expect(fetchMock).toHaveBeenCalledTimes(12);
   });
 
   it("falls back to the per-wiki feed route when the portal endpoint is gone", async () => {
@@ -430,8 +467,9 @@ describe("collectHistoricalCandidates", () => {
     );
 
     expect(result.results.length).toBeGreaterThan(0);
-    expect(result.diagnostics.failures).toHaveLength(2);
-    expect(result.diagnostics.failures[0]).toContain("HTTP 503");
+    const feedFailures = result.diagnostics.failures.filter((note) => note.includes("onthisday") || /^(?:events|selected):/u.test(note));
+    expect(feedFailures).toHaveLength(2);
+    expect(feedFailures[0]).toContain("HTTP 503");
   });
 
   it("names the countries under conflict that day and which the ledger passes over", async () => {

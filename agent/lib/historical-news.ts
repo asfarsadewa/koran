@@ -35,7 +35,20 @@ import {
   type DateParts,
   type HistoricalWindowFit,
 } from "./historical-window";
+import {
+  sweepHarmCategories,
+  type CategorySweepDiagnostics,
+} from "./historical-categories";
 import { EDITORIAL_WINDOW_MS } from "./publication-context";
+import { collectNytReports, NYT_ARCHIVE_STATUSES } from "./nyt-archive";
+import {
+  record,
+  text,
+  wikiApiUrl,
+  wikimediaGet,
+  wikipediaArticleUrl,
+  wikipediaTitleFromUrl,
+} from "./wikimedia";
 
 // The vocabulary a reader of the ledger needs, re-exported so consumers of the
 // collector do not have to know which module each half lives in.
@@ -48,6 +61,11 @@ export {
   historicalEvidenceSchema,
   type HistoricalEvidence,
 } from "./historical-evidence";
+export {
+  WIKIMEDIA_USER_AGENT,
+  wikipediaArticleUrl,
+  wikipediaTitleFromUrl,
+} from "./wikimedia";
 
 const parseableTimestampSchema = z.string().refine(
   (value) => Number.isFinite(Date.parse(value)),
@@ -122,6 +140,20 @@ export const historicalDiagnosticsSchema = z.object({
       named: z.boolean(),
     }),
   ),
+  categorySweep: z.object({
+    categories: z.number().int().nonnegative(),
+    articles: z.number().int().nonnegative(),
+    kept: z.number().int().nonnegative(),
+    future: z.number().int().nonnegative(),
+    tooOld: z.number().int().nonnegative(),
+    imprecise: z.number().int().nonnegative(),
+    undated: z.number().int().nonnegative(),
+  }),
+  nytArchive: z.object({
+    status: z.enum(NYT_ARCHIVE_STATUSES),
+    scanned: z.number().int().nonnegative(),
+    kept: z.number().int().nonnegative(),
+  }),
   fallbacks: z.array(z.string()),
   failures: z.array(z.string()),
 });
@@ -142,9 +174,6 @@ export type HistoricalWindow = z.infer<typeof historicalWindowSchema>;
 export type HistoricalCandidate = z.infer<typeof historicalCandidateSchema>;
 export type HistoricalCandidateResult = z.infer<typeof historicalCandidateResultSchema>;
 
-export const WIKIMEDIA_USER_AGENT =
-  "JuaraMerdeka/0.1 (https://koran.r3ptil.com; kemarin-historical-desk)";
-
 const MONTH_NAMES = [
   "January",
   "February",
@@ -162,21 +191,6 @@ const MONTH_NAMES = [
 
 const WIKI_LINK = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/gu;
 const FILE_OR_CATEGORY = /^(?:File|Image|Category|Special|Wikipedia|Template|Help):/iu;
-
-type JsonRecord = Record<string, unknown>;
-
-let requestQueue: Promise<void> = Promise.resolve();
-let lastRequestAt = 0;
-
-function record(value: unknown): JsonRecord | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : null;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
 
 export function cleanWikiText(value: string, maxLength = 600): string {
   return value
@@ -197,26 +211,6 @@ export function cleanWikiText(value: string, maxLength = 600): string {
     .replace(/\s+/gu, " ")
     .trim()
     .slice(0, maxLength);
-}
-
-export function wikipediaArticleUrl(title: string): string | null {
-  const trimmed = title.replace(/_/gu, " ").trim();
-  if (!trimmed || FILE_OR_CATEGORY.test(trimmed)) return null;
-  return `https://en.wikipedia.org/wiki/${encodeURIComponent(trimmed).replace(/%20/gu, "_")}`;
-}
-
-/** The inverse, so a candidate discovered as a URL can be sent back for its references. */
-export function wikipediaTitleFromUrl(value: string): string | null {
-  try {
-    const url = new URL(value);
-    if (url.hostname.replace(/^www\./u, "") !== "en.wikipedia.org") return null;
-    const path = /^\/wiki\/(.+)$/u.exec(url.pathname)?.[1];
-    if (!path) return null;
-    const title = decodeURIComponent(path).replace(/_/gu, " ").trim();
-    return title && !FILE_OR_CATEGORY.test(title) ? title : null;
-  } catch {
-    return null;
-  }
 }
 
 export function extractWikiTitles(markup: string): string[] {
@@ -295,9 +289,61 @@ const MONTH_NAME_GROUP =
 const MONTH_BULLET = new RegExp(
   `^\\*\\s*\\[\\[((?:${MONTH_NAME_GROUP})\\s+\\d{1,2})\\]\\]` +
     `(?:\\s*[–-]\\s*\\[\\[((?:${MONTH_NAME_GROUP})\\s+\\d{1,2})(?:\\|[^\\]]+)?\\]\\])?` +
-    `\\s*[–—:-]?\\s*(.+)$`,
-  "gmu",
+    `[ \\t]*[–—:-]?[ \\t]*(.*)$`,
+  "u",
 );
+
+/** A bullet nested under a date line, which inherits that line's date. */
+const NESTED_BULLET = /^\*{2,}\s*(.+)$/u;
+
+/**
+ * Words that mark an article about an event rather than a place, person or body.
+ * A chronology line usually links the country before the disaster that struck it,
+ * and the first link alone filed the Hamlet plant fire under the town.
+ */
+const EVENT_TITLE =
+  /\b(?:war|wars|crisis|massacre|battle|siege|earthquake|bombings?|attacks?|crash|disaster|riots?|coup|hostage|offensive|operation|scandal|floods?|cyclone|hurricane|typhoon|eruption|incident|uprising|conflict|shooting|explosion|fire|famine|epidemic|outbreak|insurgency|rebellion|killings|sinking|derailment|collision|hijacking|assassination|genocide|tsunami|landslide|avalanche|storm|tornado|drought|unrest|protests?)\b/iu;
+
+export function pickEventTitle(titles: string[]): string | undefined {
+  return titles.find((title) => EVENT_TITLE.test(title)) ?? titles[0];
+}
+
+interface ChronologyEntry {
+  startLabel: string;
+  endLabel?: string;
+  body: string;
+}
+
+/**
+ * Splits a month section into one entry per event. A date line either carries its
+ * event inline or heads a list of nested bullets that all share its date; reading
+ * only the first nested bullet quietly dropped the rest of that day.
+ */
+function chronologyEntries(wikitext: string): ChronologyEntry[] {
+  const entries: ChronologyEntry[] = [];
+  let heading: Omit<ChronologyEntry, "body"> | null = null;
+
+  for (const line of wikitext.split(/\r?\n/u)) {
+    const dated = MONTH_BULLET.exec(line);
+    if (dated) {
+      heading = {
+        startLabel: dated[1] ?? "",
+        ...(dated[2] ? { endLabel: dated[2] } : {}),
+      };
+      const body = (dated[3] ?? "").trim();
+      if (body) entries.push({ ...heading, body });
+      continue;
+    }
+    const nested = NESTED_BULLET.exec(line);
+    if (nested && heading) {
+      entries.push({ ...heading, body: (nested[1] ?? "").trim() });
+      continue;
+    }
+    if (/^\*/u.test(line) || /^=/u.test(line)) heading = null;
+  }
+
+  return entries;
+}
 
 export function parseYearMonthWikitext(
   wikitext: string,
@@ -309,8 +355,8 @@ export function parseYearMonthWikitext(
   if (!editionParts) return [];
   const events: ParsedHistoricalEvent[] = [];
 
-  for (const match of wikitext.matchAll(MONTH_BULLET)) {
-    const startParts = parseMonthDayLabel(match[1] ?? "", year);
+  for (const entry of chronologyEntries(wikitext)) {
+    const startParts = parseMonthDayLabel(entry.startLabel, year);
     if (!startParts) {
       ledger.withoutTimestamp += 1;
       continue;
@@ -319,7 +365,7 @@ export function parseYearMonthWikitext(
     // in a later year. Reading the end day against the start month turned both into
     // ranges that ran backwards, and a range that runs backwards can never straddle
     // the printed day — which is the one thing an end date is here to establish.
-    const endLabel = match[2];
+    const endLabel = entry.endLabel;
     const endInStartYear = endLabel ? parseMonthDayLabel(endLabel, year) : null;
     const endParts =
       endInStartYear && endInStartYear.month < startParts.month
@@ -331,14 +377,13 @@ export function parseYearMonthWikitext(
       continue;
     }
 
-    const titles = extractWikiTitles(match[0]);
-    const primaryTitle = titles[0];
+    const primaryTitle = pickEventTitle(extractWikiTitles(entry.body));
     const url = primaryTitle
       ? wikipediaArticleUrl(primaryTitle)
       : `https://en.wikipedia.org/wiki/${year}`;
     if (!url || !isLikelyHistoricalSourceUrl(url)) continue;
 
-    const description = cleanWikiText(match[3] ?? "");
+    const description = cleanWikiText(entry.body);
     if (description.length < 24) continue;
 
     events.push({
@@ -349,7 +394,7 @@ export function parseYearMonthWikitext(
       dayOffset: fit.dayOffset,
       sourceName: "Wikipedia",
       url,
-      citations: extractCitations(match[0]).filter((citation) => citation.url !== url),
+      citations: extractCitations(entry.body).filter((citation) => citation.url !== url),
       searchQuery: "wikipedia:year-chronology",
     });
   }
@@ -390,8 +435,7 @@ export function parseOnThisDayPageWikitext(
       recordRejection(ledger, dayDelta(editionParts, eventParts));
       continue;
     }
-    const titles = extractWikiTitles(match[0]);
-    const primaryTitle = titles[0];
+    const primaryTitle = pickEventTitle(extractWikiTitles(match[0]));
     const url = primaryTitle ? wikipediaArticleUrl(primaryTitle) : null;
     if (!url) continue;
     const description = cleanWikiText(match[2] ?? "");
@@ -492,58 +536,6 @@ export function parseOnThisDayFeed(
 /* Wikimedia transport                                                        */
 /* -------------------------------------------------------------------------- */
 
-async function waitForRateWindow(): Promise<void> {
-  const remaining = 1_100 - (Date.now() - lastRequestAt);
-  if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
-  lastRequestAt = Date.now();
-}
-
-function queued<T>(operation: () => Promise<T>): Promise<T> {
-  const result = requestQueue.then(async () => {
-    await waitForRateWindow();
-    return operation();
-  });
-  requestQueue = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
-}
-
-async function wikipediaGet(url: URL, signal?: AbortSignal): Promise<unknown> {
-  return queued(async () => {
-    let response: Response | null = null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      response = await fetch(url, {
-        headers: {
-          accept: "application/json",
-          "user-agent": WIKIMEDIA_USER_AGENT,
-        },
-        signal,
-      });
-      if (response.status !== 429) break;
-      const retryAfter = Number(response.headers.get("retry-after"));
-      const delay = Number.isFinite(retryAfter)
-        ? Math.max(retryAfter * 1_000, 1_500)
-        : 1_500 * (attempt + 1);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      lastRequestAt = Date.now();
-    }
-    if (!response) throw new Error("Wikimedia returned no response");
-    if (response.status === 404) return null;
-    if (!response.ok) {
-      throw new Error(`Wikimedia request failed with HTTP ${response.status}`);
-    }
-    return response.json();
-  });
-}
-
-function wikiApiUrl(params: Record<string, string>): URL {
-  const url = new URL("https://en.wikipedia.org/w/api.php");
-  url.search = new URLSearchParams({ format: "json", formatversion: "2", origin: "*", ...params }).toString();
-  return url;
-}
-
 /**
  * Reads the month section of a year chronology. The table of contents costs one
  * request and the section body another, so the caller is told how many actually
@@ -554,7 +546,7 @@ export async function fetchYearMonthWikitext(
   monthName: string,
   signal?: AbortSignal,
 ): Promise<{ wikitext: string; requests: number }> {
-  const toc = record(await wikipediaGet(wikiApiUrl({ action: "parse", page: String(year), prop: "sections" }), signal));
+  const toc = record(await wikimediaGet(wikiApiUrl({ action: "parse", page: String(year), prop: "sections" }), signal));
   const parse = record(toc?.parse);
   const sections = Array.isArray(parse?.sections) ? parse.sections : [];
   const monthSection = sections
@@ -563,7 +555,7 @@ export async function fetchYearMonthWikitext(
   const index = text(monthSection?.index);
   if (!index) return { wikitext: "", requests: 1 };
   const body = record(
-    await wikipediaGet(
+    await wikimediaGet(
       wikiApiUrl({ action: "parse", page: String(year), prop: "wikitext", section: index }),
       signal,
     ),
@@ -578,14 +570,14 @@ export async function fetchDayPageWikitext(
 ): Promise<string> {
   const page = `${monthName}_${day}`;
   const body = record(
-    await wikipediaGet(wikiApiUrl({ action: "parse", page, prop: "wikitext" }), signal),
+    await wikimediaGet(wikiApiUrl({ action: "parse", page, prop: "wikitext" }), signal),
   );
   return text(record(body?.parse)?.wikitext) ?? "";
 }
 
 export async function fetchArticleWikitext(title: string, signal?: AbortSignal): Promise<string> {
   const body = record(
-    await wikipediaGet(wikiApiUrl({ action: "parse", page: title, prop: "wikitext" }), signal),
+    await wikimediaGet(wikiApiUrl({ action: "parse", page: title, prop: "wikitext" }), signal),
   );
   return text(record(body?.parse)?.wikitext) ?? "";
 }
@@ -630,7 +622,7 @@ export async function fetchOnThisDayFeed(
   for (const [index, endpoint] of ON_THIS_DAY_ENDPOINTS.entries()) {
     requests += 1;
     try {
-      const payload = await wikipediaGet(endpoint.url(monthPart, dayPart, kind), signal);
+      const payload = await wikimediaGet(endpoint.url(monthPart, dayPart, kind), signal);
       if (onThisDayEntries(payload)) {
         return {
           payload,
@@ -660,7 +652,7 @@ export async function fetchOnThisDayFeed(
  * references on its page reads exactly like one with none. Those candidates are sent
  * back to Wikipedia once each for the article's own reference list.
  */
-export const MAX_ARTICLE_ENRICHMENTS = 12;
+export const MAX_ARTICLE_ENRICHMENTS = 24;
 
 /** How many harvested citations a single article may contribute. */
 const ARTICLE_CITATION_LIMIT = 4;
@@ -732,7 +724,7 @@ function toCandidate(
   }
 
   const evidence = [
-    buildEvidence({ url: event.url }, event.eventDate, editionDate),
+    buildEvidence({ url: event.url }, event.eventDate, editionDate, "self"),
     ...event.citations
       .slice(0, 6)
       .map((citation) => buildEvidence(citation, event.eventDate, editionDate)),
@@ -803,15 +795,26 @@ function mergeCandidates(
   };
 }
 
+export interface HistoricalCollectionOptions {
+  /** Without it the newspaper archive is skipped and the ledger says so. */
+  nytApiKey?: string;
+}
+
 export async function collectHistoricalCandidates(
   rawWindow: HistoricalWindow,
   signal?: AbortSignal,
+  options: HistoricalCollectionOptions = {},
 ): Promise<HistoricalCandidateResult> {
   const window = historicalWindowSchema.parse(rawWindow);
   const editionParts = parseIsoDate(window.editionDate);
   if (!editionParts) throw new Error("Kemarin edition date is invalid");
   const monthName = MONTH_NAMES[editionParts.month - 1];
   if (!monthName) throw new Error("Kemarin edition month is invalid");
+
+  // The archive sits on another host with its own rate limit, so it downloads while
+  // the Wikimedia queue works through its requests one by one.
+  const nytPending = collectNytReports(window.editionDate, options.nytApiKey, signal);
+  nytPending.catch(() => undefined);
 
   let searchesRun = 0;
   const ledger = skipLedger();
@@ -869,6 +872,16 @@ export async function collectHistoricalCandidates(
       ...parseOnThisDayFeed(feed.payload, window.editionDate, `wikimedia:${kind}`, ledger),
     );
   }
+
+  const categories = await sweepHarmCategories(window.editionDate, signal);
+  searchesRun += categories.requests;
+  failures.push(...categories.failures);
+  parsed.push(...categories.events);
+
+  const nyt = await nytPending;
+  searchesRun += nyt.requests;
+  failures.push(...nyt.failures);
+  parsed.push(...nyt.events);
 
   const discovery: Record<string, number> = {};
   const byUrl = new Map<string, HistoricalCandidate>();
@@ -961,6 +974,8 @@ export async function collectHistoricalCandidates(
         pressure,
         ranked.map((item) => `${item.title} ${item.description}`),
       ),
+      categorySweep: categories.diagnostics satisfies CategorySweepDiagnostics,
+      nytArchive: nyt.diagnostics,
       fallbacks,
       failures,
     },

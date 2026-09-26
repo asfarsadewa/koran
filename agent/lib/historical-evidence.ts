@@ -46,9 +46,10 @@ export const EVIDENCE_AVAILABILITY = ["available", "unavailable", "unknown"] as 
  * the chronology line for that day, which pins it to the event. `article` means it
  * was taken off the topic's own reference list and kept only because its date falls
  * in the event's weeks — near enough to be worth reading, not proof it is about this
- * incident rather than another one in the same war.
+ * incident rather than another one in the same war. `self` is the candidate's own
+ * page — the encyclopedia article or the archived report the event was found in.
  */
-export const EVIDENCE_ATTACHMENTS = ["event-line", "article"] as const;
+export const EVIDENCE_ATTACHMENTS = ["self", "event-line", "article"] as const;
 
 export const historicalEvidenceSchema = z.object({
   url: z.string().url(),
@@ -337,12 +338,15 @@ export function hasEditionTimeEvidence(evidence: HistoricalEvidence[]): boolean 
   );
 }
 
-/** Publishers behind the evidence that are neither the encyclopedia nor its own host. */
+/**
+ * Publishers behind the evidence other than an encyclopedia. A candidate found in
+ * a newspaper archive is its own first independent publisher: the report itself is
+ * the record from outside the encyclopedia.
+ */
 export function independentPublishers(evidence: HistoricalEvidence[]): Set<string> {
-  const primary = evidence[0]?.publisher;
   return new Set(
     evidence
-      .filter((item) => item.sourceType !== "encyclopedia" && item.publisher !== primary)
+      .filter((item) => item.sourceType !== "encyclopedia")
       .map((item) => item.publisher),
   );
 }
@@ -351,7 +355,7 @@ export function independentPublishers(evidence: HistoricalEvidence[]): Set<strin
 /* Ledger scoring                                                             */
 /* -------------------------------------------------------------------------- */
 
-const IMPACT_KEYWORDS =
+export const IMPACT_KEYWORDS =
   /\b(?:war|fighting|battle|siege|shell|bomb|massacr|killed|deaths?|casualt|wounded|famine|starvation|refugee|displac|evacuat|earthquake|flood|cyclone|hurricane|typhoon|drought|epidemic|cholera|outbreak|disease|crash|derail|explosion|blaze|coup|riot|protest|repression|torture|detain|hostage|blockade|sanction|collapse|genocide|expel|expuls)/iu;
 
 export interface ScoreInput {

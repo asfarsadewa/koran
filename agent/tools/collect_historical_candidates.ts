@@ -5,6 +5,7 @@ import {
   historicalCandidateResultSchema,
   historicalWindowSchema,
   MAX_ARTICLE_ENRICHMENTS,
+  type HistoricalCandidateResult,
   type HistoricalEvidence,
 } from "../lib/historical-news";
 
@@ -29,6 +30,7 @@ const AVAILABILITY_LABELS: Record<HistoricalEvidence["availableByEdition"], stri
 };
 
 const ATTACHMENT_LABELS: Record<HistoricalEvidence["attachedTo"], string> = {
+  self: "halaman calon itu sendiri",
   "event-line": "dikutip pada baris peristiwa",
   article: "dari daftar rujukan artikel",
 };
@@ -46,13 +48,25 @@ function renderEvidence(evidence: HistoricalEvidence[]): string {
     .join("\n");
 }
 
+function nytLine(nyt: HistoricalCandidateResult["diagnostics"]["nytArchive"]): string {
+  if (nyt.status === "no-key") {
+    return "Arsip The New York Times tidak dibaca karena kuncinya belum dipasang. Buku calon ini tidak memuat laporan surat kabar sezaman selain rujukan Wikipedia.";
+  }
+  if (nyt.status === "failed") {
+    return "Arsip The New York Times gagal dibaca. Buku calon ini tidak memuat laporan surat kabar sezaman selain rujukan Wikipedia.";
+  }
+  return `Arsip The New York Times: ${nyt.scanned} naskah diperiksa dari terbitan tanggal cetak dan tiga hari sebelumnya, ${nyt.kept} laporan tentang dampak buruk bagi manusia masuk buku calon. Laporan itu terbit sezaman dan sudah ada di tangan meja redaksi pagi itu. Satu peristiwa dapat muncul dua kali, sekali dari Wikipedia dan sekali dari laporan ini; perlakukan keduanya sebagai satu berita dengan dua sumber.`;
+}
+
 export default defineTool({
   description:
-    "Collect one historical candidate ledger for the Kemarin sheet. Pass editionDate, publicationDate, and both window timestamps from kemarin_publication_context without change. The tool reads the Wikipedia year chronology for the printed month and the month before it, the calendar-day page, and the Wikimedia on-this-day feeds, then returns dated events placed by distance from the printed day — exact, adjacent, ongoing, or recent. Nothing dated after the printed day is returned, so the sheet cannot report what had not happened yet. Every source is classified twice over: as contemporary reporting, later history or undated, and separately as something the desk of that morning could or could not have held. It also reports which countries saw unusual conflict that day according to the GDELT event archive, and which of those no candidate mentions — a warning that the day's coverage may be lopsided, never a source in itself.",
+    "Collect one historical candidate ledger for the Kemarin sheet. Pass editionDate, publicationDate, and both window timestamps from kemarin_publication_context without change. The tool reads the Wikipedia year chronology for the printed month and the month before it, the calendar-day page, the Wikimedia on-this-day feeds, the Wikipedia harm categories for the printed year dated through Wikidata, and the New York Times issues of the printed day and the three days before it, then returns dated events placed by distance from the printed day — exact, adjacent, ongoing, or recent. Nothing dated after the printed day is returned, so the sheet cannot report what had not happened yet. Every source is classified twice over: as contemporary reporting, later history or undated, and separately as something the desk of that morning could or could not have held. It also reports which countries saw unusual conflict that day according to the GDELT event archive, and which of those no candidate mentions — a warning that the day's coverage may be lopsided, never a source in itself.",
   inputSchema: historicalWindowSchema,
   outputSchema: historicalCandidateResultSchema,
   async execute(input, context) {
-    return collectHistoricalCandidates(input, context.abortSignal);
+    return collectHistoricalCandidates(input, context.abortSignal, {
+      nytApiKey: process.env.NYT_API_KEY,
+    });
   },
   toModelOutput(output) {
     const entries = output.results.map((result, index) => {
@@ -78,6 +92,7 @@ export default defineTool({
     });
 
     const fit = output.diagnostics.windowFit;
+    const sweep = output.diagnostics.categorySweep;
     const enrichment = output.diagnostics.articleEnrichment;
     const unnamed = output.diagnostics.conflictPressure.filter((entry) => !entry.named);
     const pressureLines = output.diagnostics.conflictPressure.length
@@ -105,6 +120,8 @@ export default defineTool({
             : ""
         } Rujukan yang datang dari daftar artikel hanya disaring menurut tanggalnya, jadi ia dekat pada pekan peristiwa tetapi belum tentu berbicara tentang kejadian ini; periksa sebelum memakainya.`,
         `Disisihkan: ${output.diagnostics.excludedFuture} peristiwa di dalam bulan cetak yang baru terjadi sesudah tanggal cetak, ${output.diagnostics.excludedTooOld} yang terlalu jauh ke belakang, ${output.diagnostics.excludedOtherYear} dari tahun lain — halaman hari dan umpan on-this-day memuat setiap tahun yang pernah memakai tanggal itu, jadi angka ini tidak mengatakan apa-apa tentang ramai atau sepinya hari cetak — dan ${output.excludedWithoutTimestamp} tanpa tanggal.`,
+        `Penyisiran kategori bencana, serangan, pembantaian, pertempuran, pertikaian, dan kerusuhan tahun cetak: ${sweep.categories} kategori dan ${sweep.articles} artikel dibaca. ${sweep.kept} artikel bertanggal Wikidata masuk buku calon. Disisihkan: ${sweep.future} sesudah tanggal cetak, ${sweep.tooOld} terlalu jauh ke belakang, ${sweep.imprecise} bertanggal bulan atau tahun saja yang mungkin jatuh sesudah tanggal cetak, dan ${sweep.undated} tanpa tanggal. Calon dari kategori tiba tanpa rujukan; ringkasannya ditulis kemudian dan dapat memuat angka akhir yang belum diketahui pada pagi cetak.`,
+        nytLine(output.diagnostics.nytArchive),
         ...pressureLines,
         ...(output.diagnostics.fallbacks.length
           ? [`Umpan cadangan dipakai: ${output.diagnostics.fallbacks.join(", ")}.`]
