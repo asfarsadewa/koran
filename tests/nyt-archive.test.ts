@@ -67,7 +67,7 @@ describe("parseNytArchive", () => {
     });
   });
 
-  it("reads the foreign desk whole and the national desk only for harm", () => {
+  it("reads the foreign desk only, harm first", () => {
     const { events } = parseNytArchive(
       [
         archive(
@@ -77,16 +77,15 @@ describe("parseNytArchive", () => {
             abstract: "The Ukrainian leader met with President Bush today to discuss the economy.",
           }),
           doc({
-            web_url: "https://www.nytimes.com/1991/09/26/us/storm-floods-southern-towns.html",
-            headline: { main: "Storm Floods Southern Towns" },
-            abstract: "Floodwater forced hundreds of families from their homes in three states.",
-            news_desk: "National Desk",
-            section_name: "U.S.",
+            web_url: "https://www.nytimes.com/1991/09/26/world/storm-floods-bangladesh-coast.html",
+            headline: { main: "Storm Floods Bangladesh Coast" },
+            abstract: "Floodwater forced hundreds of families from their homes along the delta.",
           }),
           doc({
-            web_url: "https://www.nytimes.com/1991/09/26/us/senate-hearing-resumes-today.html",
-            headline: { main: "Senate Hearing Resumes" },
-            abstract: "The committee returned to the nomination after a short recess this week.",
+            web_url: "https://www.nytimes.com/1991/09/24/us/crack-hits-chicago-along-with-a-wave-of-killing.html",
+            headline: { main: "Crack Hits Chicago, Along With a Wave of Killing" },
+            abstract: "Street gangs are fighting over the crack trade, and the killings have risen.",
+            pub_date: "1991-09-24T05:00:00+0000",
             news_desk: "National Desk",
             section_name: "U.S.",
           }),
@@ -105,9 +104,10 @@ describe("parseNytArchive", () => {
       "1991-09-26",
     );
 
-    // Harm first; the diplomatic report still comes along from the foreign desk.
+    // Harm first; the diplomatic report still comes along from the foreign desk. The
+    // national desk's city crime and the metropolitan fire stay out.
     expect(events.map((event) => event.title)).toEqual([
-      "Storm Floods Southern Towns",
+      "Storm Floods Bangladesh Coast",
       "Ukrainian Leader and Bush Confer",
     ]);
   });

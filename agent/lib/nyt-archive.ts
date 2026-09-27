@@ -5,7 +5,7 @@
  * known. The Archive API returns every item the Times published in a month, so the
  * sheet reads the issues dated from three days before the printed day up to the
  * printed day itself — the copy a desk that morning could have had on the wire —
- * and keeps the foreign desk's reports and the national desk's reports of harm.
+ * and keeps the foreign desk's reports.
  *
  * The key travels only in the request URL, and no error carries that URL.
  */
@@ -28,12 +28,11 @@ const NON_REPORT_MATERIAL =
   /^(?:correction|letter|editorial|op-ed|obituary|obit|review|biography|paid death notice|summary|list|schedule|question|chronology|caption|recipe|text)/iu;
 
 /**
- * The foreign desk carries the world the sheet reports, so every one of its reports
- * is read. The national desk is read only for reports of harm, and the other desks —
- * the city, business, sport and culture pages — not at all.
+ * Only the foreign desk is read. The national desk let a wave of city crime onto the
+ * 27 September 1991 sheet, which is the individual crime the sheet excludes, and a
+ * paper's home news is not the world the sheet reports.
  */
 const FOREIGN_DESK = /\b(?:foreign|world)\b/iu;
-const NATIONAL_DESK = /\b(?:national|u\.s\.)(?:\s|$)/iu;
 
 /** Words the evidence scorer does not need but a wire report of unrest often turns on. */
 const UNREST_KEYWORDS =
@@ -64,7 +63,6 @@ interface ArchiveDoc {
   summary: string;
   published: DateParts;
   frontPage: boolean;
-  foreignDesk: boolean;
   harm: boolean;
   words: number;
 }
@@ -85,8 +83,7 @@ function readDoc(raw: unknown): ArchiveDoc | null {
   const material = text(doc.type_of_material) ?? "";
   if (NON_REPORT_MATERIAL.test(material)) return null;
   const desk = `${text(doc.news_desk) ?? ""} ${text(doc.section_name) ?? ""}`;
-  const foreignDesk = FOREIGN_DESK.test(desk);
-  if (!foreignDesk && !NATIONAL_DESK.test(desk)) return null;
+  if (!FOREIGN_DESK.test(desk)) return null;
 
   const url = text(doc.web_url);
   const headlineRecord = record(doc.headline);
@@ -98,8 +95,6 @@ function readDoc(raw: unknown): ArchiveDoc | null {
   if (!url || !headline || !published || summary.length < 24) return null;
   if (!isLikelyHistoricalSourceUrl(url)) return null;
   const cleanHeadline = headline.replace(/\s+/gu, " ").trim();
-  const harm = reportsHarm(`${cleanHeadline} ${summary}`);
-  if (!foreignDesk && !harm) return null;
 
   return {
     url,
@@ -107,18 +102,16 @@ function readDoc(raw: unknown): ArchiveDoc | null {
     summary,
     published,
     frontPage: String(doc.print_page ?? "").trim() === "1",
-    foreignDesk,
-    harm,
+    harm: reportsHarm(`${cleanHeadline} ${summary}`),
     words: typeof doc.word_count === "number" ? doc.word_count : 0,
   };
 }
 
-/** Reports of harm first, then the front page, then the foreign desk, then the latest issue. */
+/** Reports of harm first, then the front page, then the latest issue. */
 function byProminence(edition: DateParts) {
   return (left: ArchiveDoc, right: ArchiveDoc): number =>
     Number(right.harm) - Number(left.harm) ||
     Number(right.frontPage) - Number(left.frontPage) ||
-    Number(right.foreignDesk) - Number(left.foreignDesk) ||
     dayDelta(edition, right.published) - dayDelta(edition, left.published) ||
     right.words - left.words;
 }
