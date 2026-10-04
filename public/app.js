@@ -67,8 +67,8 @@ const staticCopy = {
   },
   "accountability-title": { id: "PERTANGGUNGJAWABAN", zhHans: "编辑责任" },
   "accountability-copy": {
-    id: "Pemilihan dan penyusunan bahasa dilakukan oleh GPT-5.6 Sol. Tautan sumber, tanggal, dan akibat peristiwa diperiksa dalam tata kerja redaksi sebelum penerbitan.",
-    zhHans: "新闻选取及文字编排由 GPT-5.6 Sol 完成。出处链接、日期与事件后果均按编辑规程于出版前核验。",
+    id: "GPT-6.1 Sol memilih berita dan menyusun bahasanya. Sebelum terbit, GPT-6.1 Sol memeriksa tautan sumber, tanggal, dan akibat setiap peristiwa menurut tata kerja redaksi.",
+    zhHans: "GPT-6.1 Sol 选取新闻并编排文字。出版前，GPT-6.1 Sol 按编辑规程核验出处链接、日期与事件后果。",
   },
   "colophon-mark": { id: "JM", zhHans: "冠" },
   "source-label": { id: "SUMBER", zhHans: "来源" },

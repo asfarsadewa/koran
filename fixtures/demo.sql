@@ -5,7 +5,7 @@ INSERT INTO editions
 VALUES
   ('2000-01-01', 'hari_ini', '2000-01-01', '2000-01-01', 1,
    'Pertikaian, bencana, dan kekurangan pangan kembali menekan penduduk sipil; bantuan menghadapi jalan yang kian sempit.',
-   '2000-01-01T23:00:00.000Z', 'gpt-5.6-sol', 1)
+   '2000-01-01T23:00:00.000Z', 'gpt-6.1-sol', 1)
 ON CONFLICT(id) DO UPDATE SET is_demo = 1;
 
 DELETE FROM articles WHERE edition_id = '2000-01-01';

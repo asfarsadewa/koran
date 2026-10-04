@@ -15,7 +15,7 @@ export function validEditionPublish(): EditionPublishInput {
     issueNumber: 1,
     mastheadDek:
       "Sejumlah krisis dunia menekan kehidupan warga sipil dan menghambat penyaluran pertolongan yang mendesak.",
-    curatorModel: "gpt-5.6-sol",
+    curatorModel: "gpt-6.1-sol",
     articles: Array.from({ length: 8 }, (_, index) => ({
       rank: index + 1,
       section: index % 2 === 0 ? ("humanitarian" as const) : ("disaster" as const),

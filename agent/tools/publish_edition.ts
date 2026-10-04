@@ -25,7 +25,7 @@ export default defineTool({
       throw new Error("CLOUDFLARE_PUBLISH_URL and PUBLISH_SECRET must be configured");
     }
 
-    const body = JSON.stringify({ ...edition, curatorModel: "gpt-5.6-sol" });
+    const body = JSON.stringify({ ...edition, curatorModel: "gpt-6.1-sol" });
     const timestamp = Date.now().toString();
     const signature = createHmac("sha256", secret)
       .update(timestamp)

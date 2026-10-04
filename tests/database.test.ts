@@ -73,7 +73,7 @@ describe("readLatestEdition", () => {
         issue_number: 1,
         masthead_dek: "Ikhtisar dunia pada hari ini.",
         published_at: "2026-08-09T01:00:00.000Z",
-        curator_model: "gpt-5.6-sol",
+        curator_model: "gpt-6.1-sol",
         is_demo: 1,
         masthead_dek_zh: null,
       },
@@ -116,7 +116,7 @@ describe("readLatestEdition", () => {
       editionDate: "2026-08-09",
       publicationDate: "2026-08-09",
       issueNumber: 1,
-      curatorModel: "gpt-5.6-sol",
+      curatorModel: "gpt-6.1-sol",
       isDemo: true,
     });
     expect(edition?.articles[0]).toMatchObject({
@@ -139,7 +139,7 @@ describe("readLatestEdition", () => {
         issue_number: 2,
         masthead_dek: "Ikhtisar dunia pada hari ini.",
         published_at: "2026-08-10T01:00:00.000Z",
-        curator_model: "gpt-5.6-sol",
+        curator_model: "gpt-6.1-sol",
         is_demo: 0,
         masthead_dek_zh: "今日世界灾情摘要说明各地平民所承受的严重后果。",
       },
@@ -184,7 +184,7 @@ describe("readLatestEdition", () => {
         issue_number: 9,
         masthead_dek: "Arsip hari itu hanya menopang tiga berita.",
         published_at: "2026-08-16T23:06:00.000Z",
-        curator_model: "gpt-5.6-sol",
+        curator_model: "gpt-6.1-sol",
         is_demo: 0,
         masthead_dek_zh: "当日档案仅能支撑三则报道，因此本版篇幅从简。",
       },
@@ -224,7 +224,7 @@ describe("readLatestEdition", () => {
         issue_number: 9,
         masthead_dek: "Arsip hari itu hanya menopang tiga berita.",
         published_at: "2026-08-16T23:06:00.000Z",
-        curator_model: "gpt-5.6-sol",
+        curator_model: "gpt-6.1-sol",
         is_demo: 0,
         masthead_dek_zh: "当日档案仅能支撑三则报道，因此本版篇幅从简。",
       },
@@ -298,7 +298,7 @@ describe("publishEdition", () => {
       1,
       edition.mastheadDek,
       "2026-08-09T02:03:04.000Z",
-      "gpt-5.6-sol",
+      "gpt-6.1-sol",
     ]);
     expect(fake.calls[1]).toMatchObject({
       sql: "DELETE FROM articles WHERE edition_id = ?",

@@ -262,7 +262,7 @@ export const editionInputSchema = z
 
 export const editionPublishSchema = editionInputSchema.and(
   z.object({
-    curatorModel: z.literal("gpt-5.6-sol"),
+    curatorModel: z.literal("gpt-6.1-sol"),
   }),
 );
 

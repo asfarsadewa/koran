@@ -90,7 +90,7 @@ function editionDatabase(): D1Database {
             issue_number: 1,
             masthead_dek: "Ikhtisar dunia pada hari ini.",
             published_at: "2026-08-09T01:00:00.000Z",
-            curator_model: "gpt-5.6-sol",
+            curator_model: "gpt-6.1-sol",
             is_demo: 0,
           } as T;
         },
