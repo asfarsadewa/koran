@@ -15,22 +15,39 @@ const parseableTimestampSchema = z.string().refine(
   "Editorial window timestamps must be parseable ISO dates",
 );
 
+const editorialWindowShape = {
+  searchWindowStart: parseableTimestampSchema,
+  searchWindowEnd: parseableTimestampSchema,
+};
+
+function requireExactEditorialWindow(window: EditorialWindow, context: z.RefinementCtx): void {
+  const start = Date.parse(window.searchWindowStart);
+  const end = Date.parse(window.searchWindowEnd);
+  if (end - start !== EDITORIAL_WINDOW_MS) {
+    context.addIssue({
+      code: "custom",
+      path: ["searchWindowEnd"],
+      message: "Editorial window must span exactly 36 hours",
+    });
+  }
+}
+
 export const editorialWindowSchema = z
+  .object(editorialWindowShape)
+  .superRefine(requireExactEditorialWindow);
+
+export const MAX_CORROBORATION_QUERIES = 8;
+
+// One targeted search per selected event that still lacks an independent second publisher.
+export const corroborationInputSchema = z
   .object({
-    searchWindowStart: parseableTimestampSchema,
-    searchWindowEnd: parseableTimestampSchema,
+    ...editorialWindowShape,
+    queries: z
+      .array(z.string().trim().min(3).max(200))
+      .min(1)
+      .max(MAX_CORROBORATION_QUERIES),
   })
-  .superRefine((window, context) => {
-    const start = Date.parse(window.searchWindowStart);
-    const end = Date.parse(window.searchWindowEnd);
-    if (end - start !== EDITORIAL_WINDOW_MS) {
-      context.addIssue({
-        code: "custom",
-        path: ["searchWindowEnd"],
-        message: "Editorial window must span exactly 36 hours",
-      });
-    }
-  });
+  .superRefine(requireExactEditorialWindow);
 
 export const braveNewsInputSchema = z.object({
   query: z.string().trim().min(3).max(300),
@@ -69,9 +86,26 @@ export const dailyCandidateResultSchema = z.object({
   ),
 });
 
+export const corroborationResultSchema = z.object({
+  searchesRun: z.number().int(),
+  searchWindowStart: parseableTimestampSchema,
+  searchWindowEnd: parseableTimestampSchema,
+  freshnessRange: customFreshnessSchema,
+  excludedOutsideWindow: z.number().int().nonnegative(),
+  excludedWithoutTimestamp: z.number().int().nonnegative(),
+  searches: z.array(
+    z.object({
+      query: z.string(),
+      results: braveNewsResultSchema.shape.results,
+    }),
+  ),
+});
+
 export type BraveNewsInput = z.infer<typeof braveNewsInputSchema>;
 export type BraveNewsResult = z.infer<typeof braveNewsResultSchema>;
 export type DailyCandidateResult = z.infer<typeof dailyCandidateResultSchema>;
+export type CorroborationInput = z.infer<typeof corroborationInputSchema>;
+export type CorroborationResult = z.infer<typeof corroborationResultSchema>;
 
 const DAILY_SEARCH_QUERIES = [
   "civilian casualties war conflict displacement latest",
@@ -132,6 +166,36 @@ function queued<T>(operation: () => Promise<T>): Promise<T> {
 
 function freshnessRangeForWindow(window: EditorialWindow): string {
   return `${window.searchWindowStart.slice(0, 10)}to${window.searchWindowEnd.slice(0, 10)}`;
+}
+
+interface WindowFilter {
+  excludedOutsideWindow: number;
+  excludedWithoutTimestamp: number;
+}
+
+function insideWindow<T extends { publishedAt: string | null }>(
+  results: T[],
+  window: EditorialWindow,
+  tally: WindowFilter,
+): T[] {
+  const windowStart = Date.parse(window.searchWindowStart);
+  const windowEnd = Date.parse(window.searchWindowEnd);
+  return results.filter((result) => {
+    if (!result.publishedAt) {
+      tally.excludedWithoutTimestamp += 1;
+      return false;
+    }
+    const publishedAt = Date.parse(result.publishedAt);
+    if (!Number.isFinite(publishedAt)) {
+      tally.excludedWithoutTimestamp += 1;
+      return false;
+    }
+    if (publishedAt < windowStart || publishedAt > windowEnd) {
+      tally.excludedOutsideWindow += 1;
+      return false;
+    }
+    return true;
+  });
 }
 
 export async function searchBraveNews(
@@ -231,8 +295,6 @@ export async function collectDailyCandidates(
   signal?: AbortSignal,
 ): Promise<DailyCandidateResult> {
   const window = editorialWindowSchema.parse(rawWindow);
-  const windowStart = Date.parse(window.searchWindowStart);
-  const windowEnd = Date.parse(window.searchWindowEnd);
   const freshnessRange = freshnessRangeForWindow(window);
   const byUrl = new Map<string, DailyCandidateResult["results"][number]>();
 
@@ -247,32 +309,44 @@ export async function collectDailyCandidates(
     }
   }
 
-  let excludedOutsideWindow = 0;
-  let excludedWithoutTimestamp = 0;
-  const results = [...byUrl.values()].filter((result) => {
-    if (!result.publishedAt) {
-      excludedWithoutTimestamp += 1;
-      return false;
-    }
-    const publishedAt = Date.parse(result.publishedAt);
-    if (!Number.isFinite(publishedAt)) {
-      excludedWithoutTimestamp += 1;
-      return false;
-    }
-    if (publishedAt < windowStart || publishedAt > windowEnd) {
-      excludedOutsideWindow += 1;
-      return false;
-    }
-    return true;
-  });
+  const tally: WindowFilter = { excludedOutsideWindow: 0, excludedWithoutTimestamp: 0 };
+  const results = insideWindow([...byUrl.values()], window, tally);
 
   return dailyCandidateResultSchema.parse({
     searchesRun: DAILY_SEARCH_QUERIES.length,
     searchWindowStart: window.searchWindowStart,
     searchWindowEnd: window.searchWindowEnd,
     freshnessRange,
-    excludedOutsideWindow,
-    excludedWithoutTimestamp,
+    ...tally,
     results,
+  });
+}
+
+export async function corroborateDailyEvents(
+  apiKey: string,
+  rawInput: CorroborationInput,
+  signal?: AbortSignal,
+): Promise<CorroborationResult> {
+  const input = corroborationInputSchema.parse(rawInput);
+  const freshnessRange = freshnessRangeForWindow(input);
+  const tally: WindowFilter = { excludedOutsideWindow: 0, excludedWithoutTimestamp: 0 };
+  const searches: CorroborationResult["searches"] = [];
+
+  for (const query of input.queries) {
+    const search = await searchBraveNews(
+      { query, freshness: freshnessRange, count: 10, offset: 0 },
+      apiKey,
+      signal,
+    );
+    searches.push({ query, results: insideWindow(search.results, input, tally) });
+  }
+
+  return corroborationResultSchema.parse({
+    searchesRun: input.queries.length,
+    searchWindowStart: input.searchWindowStart,
+    searchWindowEnd: input.searchWindowEnd,
+    freshnessRange,
+    ...tally,
+    searches,
   });
 }

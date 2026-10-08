@@ -210,3 +210,94 @@ describe("collectDailyCandidates", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("corroborateDailyEvents", () => {
+  it("runs one ten-result search per query over the editorial calendar range", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(editorialWindow.searchWindowEnd));
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(braveResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+    const { corroborateDailyEvents } = await loadBraveNews();
+
+    const resultPromise = corroborateDailyEvents("test-api-key", {
+      ...editorialWindow,
+      queries: ["Yemen Houthi displacement", "Saudi airport attack Houthi"],
+    });
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(result).toMatchObject({
+      ...editorialWindow,
+      searchesRun: 2,
+      freshnessRange: "2026-08-07to2026-08-09",
+    });
+    expect(result.searches.map((search) => search.query)).toEqual([
+      "Yemen Houthi displacement",
+      "Saudi airport attack Houthi",
+    ]);
+    expect(result.searches[0]?.results).toHaveLength(1);
+    const requests = fetchMock.mock.calls as [URL, RequestInit][];
+    expect(requests.map(([url]) => url.searchParams.get("q"))).toEqual([
+      "Yemen Houthi displacement",
+      "Saudi airport attack Houthi",
+    ]);
+    for (const [requestUrl] of requests) {
+      expect(requestUrl.searchParams.get("freshness")).toBe("2026-08-07to2026-08-09");
+      expect(requestUrl.searchParams.get("count")).toBe("10");
+    }
+  });
+
+  it("applies the same 36-hour filter as the candidate ledger", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(editorialWindow.searchWindowEnd));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          braveResponse({
+            results: [
+              candidate("inside", "2026-08-08T06:00:00.000Z"),
+              candidate("too-old", "2026-08-07T11:59:59.999Z"),
+              candidate("undated", null),
+            ],
+          }),
+        ),
+      ),
+    );
+    const { corroborateDailyEvents } = await loadBraveNews();
+
+    const resultPromise = corroborateDailyEvents("test-api-key", {
+      ...editorialWindow,
+      queries: ["flood displacement"],
+    });
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(result.searches[0]?.results.map((entry) => entry.url)).toEqual([
+      "https://news.example/world/verified-report-inside",
+    ]);
+    expect(result.excludedOutsideWindow).toBe(1);
+    expect(result.excludedWithoutTimestamp).toBe(1);
+  });
+
+  it("rejects more than eight queries or a shifted window before calling Brave", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { corroborateDailyEvents } = await loadBraveNews();
+
+    await expect(
+      corroborateDailyEvents("test-api-key", {
+        ...editorialWindow,
+        queries: Array.from({ length: 9 }, (_, index) => `event query ${index}`),
+      }),
+    ).rejects.toThrow();
+    await expect(
+      corroborateDailyEvents("test-api-key", {
+        searchWindowStart: "2026-08-08T00:00:00.000Z",
+        searchWindowEnd: "2026-08-09T00:00:00.000Z",
+        queries: ["flood displacement"],
+      }),
+    ).rejects.toThrow("exactly 36 hours");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
