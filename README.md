@@ -67,13 +67,21 @@ CLOUDFLARE_PUBLISH_URL="http://127.0.0.1:8787"
 PUBLISH_SECRET="nilai-yang-sama-dengan-.dev.vars"
 ```
 
-Kemudian jalankan:
+Jalankan server agen lokal pada satu terminal:
+
+```powershell
+npm run dev:agent
+```
+
+Jalankan perintah berikut pada terminal lain:
 
 ```powershell
 npm run agent:info
 npm run agent:curate
 npm run agent:curate:kemarin
 ```
+
+Kedua perintah `agent:curate` mengirim prompt dari berkas jadwal ke server lokal pada `http://127.0.0.1:2000`.
 
 Untuk penerbitan satu kali dari komputer pengelola tanpa menyimpan secret penerbitan ke cakram, `scripts/publish-once.ps1` membuat secret sementara, memasangnya pada Worker, dan meneruskan nilai yang sama hanya ke proses Eve. Perintah ini memerlukan login Wrangler dan merotasi `PUBLISH_SECRET` setiap kali dijalankan:
 
@@ -125,7 +133,7 @@ CLOUDFLARE_PUBLISH_URL="https://nama-worker.example"
 PUBLISH_SECRET="..."
 ```
 
-Hubungkan proyek dengan `eve link`, pasang keenam variabel pada lingkungan produksi Vercel, lalu jalankan `eve deploy`. Gunakan nilai acak yang berbeda untuk `CRON_SECRET` dan `PUBLISH_SECRET`. Eve menerjemahkan jadwal menjadi Vercel Cron; periksa kemunculannya pada **Settings → Cron Jobs** dan riwayatnya pada **Observability → Cron Jobs**. Pemanggilan manual yang setara adalah `npm run agent:curate`.
+Hubungkan proyek dengan `eve link`, pasang keenam variabel pada lingkungan produksi Vercel, lalu jalankan `eve deploy`. Gunakan nilai acak yang berbeda untuk `CRON_SECRET` dan `PUBLISH_SECRET`. Eve menerjemahkan jadwal menjadi Vercel Cron; periksa kemunculannya pada **Settings → Cron Jobs** dan riwayatnya pada **Observability → Cron Jobs**. Untuk pemanggilan manual yang setara, isi `EVE_AGENT_URL` dengan alamat produksi agen. Kemudian jalankan `npm run agent:curate`. Perintah itu menerbitkan edisi pada koran yang tayang.
 
 ## Pemeriksaan mutu
 
