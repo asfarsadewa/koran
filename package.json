@@ -36,7 +36,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.36",
     "ai": "^7.0.58",
-    "eve": "^0.70.2",
+    "eve": "^0.90.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -48,6 +48,6 @@
     "just-bash": "^3.2.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
-    "wrangler": "^4.147.0"
+    "wrangler": "^4.156.0"
   }
 }
